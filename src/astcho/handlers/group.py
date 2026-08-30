@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import time
+
+from nonebot import on_message
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+
+from astcho.domain.models import ChatMessage
+from astcho.handlers.common import image_urls, reply_message, text_of
+from astcho.runtime import Runtime
+from astcho.services.attention import AttentionService
+
+
+def register_group(runtime: Runtime) -> None:
+    matcher = on_message(priority=20, block=False)
+
+    @matcher.handle()
+    async def handle(bot: Bot, event: GroupMessageEvent) -> None:
+        group_id, user_id = str(event.group_id), str(event.user_id)
+        if runtime.settings.allowed_groups and group_id not in runtime.settings.allowed_groups:
+            return
+        async with runtime.locks[f"group:{group_id}"]:
+            text = text_of(event)
+            descriptions = []
+            for url in image_urls(event):
+                result = await runtime.vision.describe(url)
+                descriptions.append(result.description)
+                if result.is_sticker:
+                    runtime.memes.learn(file_id=url.rsplit("/", 1)[-1][:120], url=url,
+                                        description=result.description, tags=result.tags,
+                                        inclination=result.inclination)
+            nickname = event.sender.card or event.sender.nickname or user_id
+            runtime.sqlite.touch_user(group_id, user_id, nickname)
+            attention = runtime.attention.setdefault(
+                group_id, AttentionService(str(bot.self_id))
+            )
+            mentioned = any(seg.type == "at" and str(seg.data.get("qq")) == str(bot.self_id)
+                            for seg in event.get_message())
+            message = ChatMessage(message_id=str(event.message_id), user_id=user_id,
+                                  nickname=nickname, text=text, timestamp=time.time(),
+                                  mentioned_bot=mentioned,
+                                  image_description="; ".join(descriptions))
+            attention.add(message)
+            schedule = runtime.schedule.current()
+            mood = runtime.emotion.state(group_id, user_id)
+            if not attention.should_plan(message, schedule, excitement=mood["excitement"]):
+                return
+            decision = await runtime.chat.plan(attention.context(), schedule.name)
+            runtime.emotion.apply(
+                group_id, user_id,
+                excitement_delta=decision.excitement_delta,
+                shyness_delta=decision.shyness_delta,
+                affinity_score=decision.affinity_score,
+            )
+            if decision.action != "reply":
+                return
+            memories = runtime.memory.retrieve(text or message.image_description,
+                                               group_id=group_id, user_id=user_id,
+                                               limit=runtime.settings.max_memories)
+            answer = await runtime.chat.reply(attention.context(),
+                                              [item.content for item in memories], schedule.name)
+            meme_url = None
+            if decision.should_meme and decision.meme_query:
+                candidates = runtime.memes.search(decision.meme_query, 1)
+                if candidates:
+                    meme_url = candidates[0]["url"]
+                    runtime.memes.mark_used(candidates[0]["file_id"])
+            await matcher.send(reply_message(answer, meme_url))
+            attention.add(ChatMessage(message_id=f"bot-{time.time_ns()}", user_id=str(bot.self_id),
+                                      nickname="Astcho", text=answer, timestamp=time.time(), is_bot=True))
+            runtime.tasks.create(runtime.memory.extract(text, group_id=group_id, user_id=user_id))
