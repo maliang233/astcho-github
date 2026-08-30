@@ -21,8 +21,10 @@ def register_private(runtime: Runtime) -> None:
             context = "\n".join(f"{m['role']}: {m['content']}" for m in runtime.history(key))
             memories = runtime.memory.retrieve(text, group_id="private", user_id=user_id,
                                                limit=runtime.settings.max_memories)
-            answer = await runtime.chat.reply(context, [m.content for m in memories],
-                                              runtime.schedule.current().name)
+            answer = await runtime.chat.reply(
+                context, [m.content for m in memories], runtime.schedule.current().mood,
+                emotion=runtime.emotion.state("private", user_id),
+            )
             runtime.add_history(key, "assistant", answer)
             runtime.tasks.create(runtime.memory.extract(text, group_id="private", user_id=user_id))
             await matcher.finish(answer)

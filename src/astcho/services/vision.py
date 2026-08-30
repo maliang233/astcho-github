@@ -7,6 +7,7 @@ import httpx
 
 from astcho.config import Settings
 from astcho.domain.models import VisionResult
+from astcho.prompts import vision_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.sqlite import SQLiteStore
 
@@ -30,7 +31,7 @@ class VisionService:
                 client=self.llm.vision_client, model=self.settings.vision_model,
                 schema=VisionResult,
                 messages=[{"role": "user", "content": [
-                    {"type": "text", "text": "Describe this image and whether it is a reusable chat sticker. Return JSON with description,is_sticker,tags,inclination."},
+                    {"type": "text", "text": vision_prompt()},
                     {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
                 ]}],
             )
@@ -38,4 +39,3 @@ class VisionService:
             result = VisionResult(description="无法可靠识别的图片")
         self.store.set_vision(key, result.model_dump())
         return result
-

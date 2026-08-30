@@ -61,7 +61,7 @@ class Runtime:
             settings=settings, sqlite=sqlite, vectors=vectors, llm=llm,
             chat=ChatService(settings, llm), memory=MemoryService(vectors, llm, settings.chat_model),
             vision=VisionService(settings, llm, sqlite),
-            memes=MemeCurator(sqlite, vectors, settings.meme_limit),
+            memes=MemeCurator(sqlite, vectors, settings.meme_limit, llm, settings.chat_model),
             schedule=ScheduleService(settings.schedule_path), emotion=EmotionService(sqlite),
         )
 
@@ -82,4 +82,3 @@ class Runtime:
 
     def is_admin(self, user_id: str) -> bool:
         return str(user_id) in self.settings.admins
-

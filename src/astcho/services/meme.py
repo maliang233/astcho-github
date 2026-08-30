@@ -4,11 +4,16 @@ from pathlib import Path
 
 from astcho.storage.chroma import ChromaStore
 from astcho.storage.sqlite import SQLiteStore
+from astcho.domain.models import MemeSelection
+from astcho.prompts import meme_selection_prompt
+from astcho.services.llm import LLMResponseError, LLMService
 
 
 class MemeCurator:
-    def __init__(self, sqlite: SQLiteStore, vectors: ChromaStore, limit: int):
+    def __init__(self, sqlite: SQLiteStore, vectors: ChromaStore, limit: int,
+                 llm: LLMService | None = None, model: str = ""):
         self.sqlite, self.vectors, self.limit = sqlite, vectors, limit
+        self.llm, self.model = llm, model
 
     def learn(self, *, file_id: str, url: str, description: str,
               tags: list[str], inclination: str) -> bool:
@@ -33,6 +38,24 @@ class MemeCurator:
                 record["score"] = candidate["score"]
                 output.append(record)
         return output
+
+    async def select(self, reply_text: str, mood_hint: str = "") -> dict | None:
+        candidates = self.search(f"{reply_text} [情绪:{mood_hint}]", 8)
+        if not candidates:
+            return None
+        if len(candidates) == 1 or self.llm is None:
+            return candidates[0]
+        try:
+            selection = await self.llm.json_completion(
+                model=self.model, schema=MemeSelection,
+                messages=[{"role": "user", "content": meme_selection_prompt(
+                    reply_text, candidates, mood_hint
+                )}], temperature=0.1, max_tokens=100,
+            )
+        except LLMResponseError:
+            return None
+        index = selection.selected_index
+        return candidates[index] if index is not None and index < len(candidates) else None
 
     def mark_used(self, file_id: str) -> None:
         self.sqlite.mark_meme_used(file_id)

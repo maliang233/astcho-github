@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
@@ -45,7 +46,18 @@ def register_group(runtime: Runtime) -> None:
             mood = runtime.emotion.state(group_id, user_id)
             if not attention.should_plan(message, schedule, excitement=mood["excitement"]):
                 return
-            decision = await runtime.chat.plan(attention.context(), schedule.name)
+            buffered = list(attention.messages)
+            span = int(buffered[-1].timestamp - buffered[0].timestamp) if len(buffered) > 1 else 0
+            decision = await runtime.chat.plan(
+                attention.context(), schedule.mood,
+                metadata={
+                    "current_time": datetime.now().strftime("%H:%M:%S"),
+                    "accumulated_count": len(buffered),
+                    "time_span_seconds": span,
+                    "participant_count": len({item.user_id for item in buffered if not item.is_bot}),
+                    "last_bot_spoke_seconds": attention.seconds_since_bot_reply(),
+                },
+            )
             runtime.emotion.apply(
                 group_id, user_id,
                 excitement_delta=decision.excitement_delta,
@@ -57,14 +69,16 @@ def register_group(runtime: Runtime) -> None:
             memories = runtime.memory.retrieve(text or message.image_description,
                                                group_id=group_id, user_id=user_id,
                                                limit=runtime.settings.max_memories)
-            answer = await runtime.chat.reply(attention.context(),
-                                              [item.content for item in memories], schedule.name)
+            answer = await runtime.chat.reply(
+                attention.context(), [item.content for item in memories], schedule.mood,
+                emotion=mood, planner_reason=decision.reason,
+            )
             meme_url = None
             if decision.should_meme and decision.meme_query:
-                candidates = runtime.memes.search(decision.meme_query, 1)
-                if candidates:
-                    meme_url = candidates[0]["url"]
-                    runtime.memes.mark_used(candidates[0]["file_id"])
+                selected = await runtime.memes.select(answer, decision.meme_query)
+                if selected:
+                    meme_url = selected["url"]
+                    runtime.memes.mark_used(selected["file_id"])
             await matcher.send(reply_message(answer, meme_url))
             attention.add(ChatMessage(message_id=f"bot-{time.time_ns()}", user_id=str(bot.self_id),
                                       nickname="Astcho", text=answer, timestamp=time.time(), is_bot=True))

@@ -17,3 +17,10 @@ def test_invalid_json_rejected():
 def test_error_type_is_runtime_error():
     assert issubclass(LLMResponseError, RuntimeError)
 
+
+def test_planner_accepts_legacy_emotion_field_names():
+    value = PlannerDecision.model_validate({
+        "action": "reply", "excitement": 0.1, "shyness": -0.1
+    })
+    assert value.excitement_delta == 0.1
+    assert value.shyness_delta == -0.1

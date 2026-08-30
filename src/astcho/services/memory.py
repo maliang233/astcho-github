@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from astcho.domain.models import MemoryExtraction, RetrievedMemory
+from astcho.prompts import memory_extraction_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.chroma import ChromaStore
 
@@ -23,8 +24,7 @@ class MemoryService:
                 model=self.model,
                 schema=MemoryExtraction,
                 messages=[
-                    {"role": "system", "content": "Extract durable user facts. Return JSON: {memories:[{content,importance,kind}]}. Never infer sensitive facts."},
-                    {"role": "user", "content": text[:3000]},
+                    *memory_extraction_prompt(text=text[:3000], user_id=user_id),
                 ],
             )
         except LLMResponseError:
@@ -49,4 +49,3 @@ class MemoryService:
             user_id=user_id if group_id == "private" else None,
             limit=limit,
         )
-
