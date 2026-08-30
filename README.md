@@ -1,6 +1,6 @@
 # Astcho
 
-Astcho 是一个面向 QQ 的、隐私友好的 NoneBot2 AI 伴侣。公开版保留群聊与私聊、日程与情绪、向量记忆、图片理解和表情策展功能；所有本地数据默认写入被 Git 忽略的 `var/`。
+Astcho 是一个面向 QQ 的、隐私友好的 NoneBot2 AI 伴侣。公开版保留群聊与私聊、日程与情绪、向量记忆、图片理解、表情策展和群聊表达学习；所有本地数据默认写入被 Git 忽略的 `var/`。
 
 ## 要求
 
@@ -26,6 +26,7 @@ python -m astcho
 
 - SQLite、Chroma、图片和缓存统一位于 `ASTCHO_DATA_DIR`（默认 `var/`）。
 - 私聊记忆按当前 `user_id` 隔离；群聊记忆按 `group_id` 隔离。
+- 表达学习按群隔离，只持久化抽象后的“适用情境—表达方式”，不会保存完整聊天记录。
 - 仓库不应包含 `.env`、数据库、图片、日志、真实人格或账号信息。
 - 模型输出经过结构校验；模型不能执行管理操作。
 
@@ -40,4 +41,3 @@ python -m compileall -q src
 ```
 
 本项目采用 MIT License。提交改动前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-

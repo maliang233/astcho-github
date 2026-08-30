@@ -55,6 +55,9 @@ class Settings:
     short_history_limit: int = 10
     max_memories: int = 8
     meme_limit: int = 300
+    expression_learning: bool = True
+    expression_learn_interval: int = 1800
+    expression_learn_min_messages: int = 10
     debug: bool = False
     reply_cooldown_seconds: int = 5
     planner_temperature: float = 0.1
@@ -113,6 +116,9 @@ class Settings:
             short_history_limit=_int("ASTCHO_SHORT_HISTORY_LIMIT", 10),
             max_memories=_int("ASTCHO_MAX_MEMORIES", 8, 1),
             meme_limit=_int("ASTCHO_MEME_LIMIT", 300, 1),
+            expression_learning=_bool(os.getenv("ASTCHO_EXPRESSION_LEARNING"), True),
+            expression_learn_interval=_int("ASTCHO_EXPRESSION_LEARN_INTERVAL", 1800, 30),
+            expression_learn_min_messages=_int("ASTCHO_EXPRESSION_LEARN_MIN_MESSAGES", 10, 3),
             debug=_bool(os.getenv("ASTCHO_DEBUG")),
             reply_cooldown_seconds=_int("ASTCHO_REPLY_COOLDOWN_SECONDS", 5),
             profile=profile,
@@ -138,4 +144,3 @@ def _load_profile(path: Path) -> dict:
     if not isinstance(data, dict):
         raise ConfigurationError("Profile must be a JSON object")
     return data
-

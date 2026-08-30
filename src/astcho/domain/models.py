@@ -51,6 +51,16 @@ class MemeSelection(BaseModel):
     selected_index: int | None = Field(default=None, ge=0)
 
 
+class LearnedExpression(BaseModel):
+    situation: str = Field(min_length=2, max_length=40)
+    style: str = Field(min_length=1, max_length=40)
+    source_id: int = Field(ge=1)
+
+
+class ExpressionExtraction(BaseModel):
+    expressions: list[LearnedExpression] = Field(default_factory=list, max_length=10)
+
+
 class RetrievedMemory(BaseModel):
     memory_id: str
     content: str

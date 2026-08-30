@@ -25,7 +25,8 @@ def register_commands(runtime: Runtime) -> None:
         state = runtime.schedule.current()
         await status.finish(
             f"Astcho running | schedule={state.routine} | talk={state.talk_value} | "
-            f"memories={runtime.vectors.memory_count()} | memes={runtime.sqlite.meme_count()}"
+            f"memories={runtime.vectors.memory_count()} | memes={runtime.sqlite.meme_count()} | "
+            f"expressions={runtime.sqlite.expression_count()}"
         )
 
     @memories.handle()
@@ -58,4 +59,3 @@ def register_commands(runtime: Runtime) -> None:
             return
         state = runtime.schedule.current()
         await schedule.finish(f"{state.routine}: talk={state.talk_value}, mood={state.mood}")
-

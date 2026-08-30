@@ -30,7 +30,8 @@ class ChatService:
             return PlannerDecision(action="no_reply", reason="invalid planner output")
 
     async def reply(self, context: str, memories: list[str], schedule: str, *,
-                    emotion: dict | None = None, planner_reason: str = "") -> str:
+                    emotion: dict | None = None, planner_reason: str = "",
+                    expression_hint: str = "") -> str:
         try:
             payload = await self.llm.json_completion(
                 model=self.settings.chat_model, schema=ReplyPayload,
@@ -38,6 +39,7 @@ class ChatService:
                     bot_name=str(self.settings.profile.get("name", "Astcho")),
                     profile=self.settings.profile, context=context, memories=memories,
                     schedule=schedule, emotion=emotion, planner_reason=planner_reason,
+                    expression_hint=expression_hint,
                 )}], temperature=self.settings.chat_temperature,
             )
             return payload.reply

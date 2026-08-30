@@ -67,6 +67,21 @@ class SQLiteStore:
                     last_accessed REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS expressions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    situation TEXT NOT NULL,
+                    style TEXT NOT NULL,
+                    examples_json TEXT NOT NULL DEFAULT '[]',
+                    count INTEGER NOT NULL DEFAULT 1,
+                    checked INTEGER NOT NULL DEFAULT 0,
+                    rejected INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    last_active REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_expressions_group
+                ON expressions(group_id, rejected, count DESC);
+
                 CREATE TABLE IF NOT EXISTS system_state (
                     key TEXT PRIMARY KEY,
                     value_json TEXT NOT NULL,
@@ -228,3 +243,44 @@ class SQLiteStore:
             ).fetchone()
         return json.loads(row["value_json"]) if row else default
 
+    def list_expressions(self, group_id: str, *, include_singletons: bool = True,
+                         limit: int = 100) -> list[dict[str, Any]]:
+        count_clause = "" if include_singletons else "AND count > 1"
+        with self._lock, self.connection() as db:
+            rows = db.execute(
+                f"""SELECT * FROM expressions
+                WHERE group_id=? AND rejected=0 {count_clause}
+                ORDER BY count DESC, last_active DESC LIMIT ?""",
+                (group_id, limit),
+            ).fetchall()
+        output = []
+        for row in rows:
+            item = dict(row)
+            item["examples"] = json.loads(item.pop("examples_json"))
+            output.append(item)
+        return output
+
+    def add_expression(self, group_id: str, situation: str, style: str,
+                       *, similar_id: int | None = None) -> None:
+        now = time.time()
+        with self._lock, self.connection() as db:
+            if similar_id is None:
+                db.execute(
+                    """INSERT INTO expressions(group_id,situation,style,examples_json,created_at,last_active)
+                    VALUES(?,?,?,?,?,?)""",
+                    (group_id, situation, style, json.dumps([situation], ensure_ascii=False), now, now),
+                )
+            else:
+                row = db.execute("SELECT examples_json FROM expressions WHERE id=?", (similar_id,)).fetchone()
+                examples = json.loads(row[0]) if row else []
+                if situation not in examples:
+                    examples.append(situation)
+                db.execute(
+                    """UPDATE expressions SET count=count+1, examples_json=?, last_active=?, checked=0
+                    WHERE id=? AND group_id=?""",
+                    (json.dumps(examples[-20:], ensure_ascii=False), now, similar_id, group_id),
+                )
+
+    def expression_count(self) -> int:
+        with self._lock, self.connection() as db:
+            return int(db.execute("SELECT COUNT(*) FROM expressions WHERE rejected=0").fetchone()[0])

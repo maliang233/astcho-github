@@ -42,6 +42,10 @@ def register_group(runtime: Runtime) -> None:
                                   mentioned_bot=mentioned,
                                   image_description="; ".join(descriptions))
             attention.add(message)
+            if runtime.settings.expression_learning and runtime.expressions.observe(group_id, message):
+                runtime.tasks.create(runtime.expressions.learn(
+                    group_id, str(runtime.settings.profile.get("name", "Astcho"))
+                ))
             schedule = runtime.schedule.current()
             mood = runtime.emotion.state(group_id, user_id)
             if not attention.should_plan(message, schedule, excitement=mood["excitement"]):
@@ -72,6 +76,7 @@ def register_group(runtime: Runtime) -> None:
             answer = await runtime.chat.reply(
                 attention.context(), [item.content for item in memories], schedule.mood,
                 emotion=mood, planner_reason=decision.reason,
+                expression_hint=runtime.expressions.relevant_hint(group_id, attention.context()),
             )
             meme_url = None
             if decision.should_meme and decision.meme_query:

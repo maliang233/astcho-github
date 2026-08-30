@@ -8,6 +8,7 @@ from astcho.config import Settings
 from astcho.services.attention import AttentionService
 from astcho.services.chat import ChatService
 from astcho.services.emotion import EmotionService
+from astcho.services.expression import ExpressionService
 from astcho.services.llm import LLMService
 from astcho.services.memory import MemoryService
 from astcho.services.meme import MemeCurator
@@ -46,6 +47,7 @@ class Runtime:
     memes: MemeCurator
     schedule: ScheduleService
     emotion: EmotionService
+    expressions: ExpressionService
     tasks: TaskManager = field(default_factory=TaskManager)
     locks: defaultdict[str, asyncio.Lock] = field(default_factory=lambda: defaultdict(asyncio.Lock))
     histories: defaultdict[str, deque] = field(default_factory=lambda: defaultdict(deque))
@@ -63,6 +65,11 @@ class Runtime:
             vision=VisionService(settings, llm, sqlite),
             memes=MemeCurator(sqlite, vectors, settings.meme_limit, llm, settings.chat_model),
             schedule=ScheduleService(settings.schedule_path), emotion=EmotionService(sqlite),
+            expressions=ExpressionService(
+                sqlite, llm, settings.chat_model,
+                interval=settings.expression_learn_interval,
+                minimum_messages=settings.expression_learn_min_messages,
+            ),
         )
 
     def add_history(self, key: str, role: str, content: str) -> None:

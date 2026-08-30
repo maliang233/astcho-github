@@ -58,7 +58,7 @@ def planner_prompt(history_text: str, *, bot_name: str, current_time: str,
 
 def reply_prompt(*, bot_name: str, profile: dict, context: str, memories: list[str],
                  schedule: str, emotion: dict | None = None,
-                 planner_reason: str = "") -> str:
+                 planner_reason: str = "", expression_hint: str = "") -> str:
     emotion = emotion or {"excitement": 0, "shyness": 0, "affinity": 0.3}
     style = "；".join(str(item) for item in profile.get("style", []))
     return f"""# {bot_name} (Astcho)
@@ -85,6 +85,9 @@ def reply_prompt(*, bot_name: str, profile: dict, context: str, memories: list[s
 
 ## Planner 决策理由
 {planner_reason or '自然回应当前消息'}
+
+## 从当前群聊学习到的表达方式
+{expression_hint or '暂无；按核心人设自然表达'}
 
 ## 相关记忆
 {chr(10).join('- ' + item for item in memories) if memories else '无'}
@@ -146,3 +149,23 @@ def meme_selection_prompt(reply_text: str, candidates: list[dict], mood_hint: st
 {chr(10).join(lines)}
 
 仅返回 JSON：{{"selected_index": number | null}}"""
+
+
+def expression_learning_prompt(chat_text: str, bot_name: str) -> str:
+    return f"""{chat_text}
+你的名字是{bot_name}，现在请从上面这段群聊中提取用户的语言风格和说话方式。
+
+1. 只考虑文字，不考虑图片或表情包
+2. 不总结 SELF 的发言，因为那是你自己的表达
+3. 不涉及具体人名、账号或具体专有名词
+4. 特殊的梗可以总结为语言风格，但不要记录私人事实
+5. 规律必须详细而有概括性，不是照抄整句
+6. situation 表示适用场景，不超过20字；style 表示句式或表达方式，不超过20字
+7. 提取3-5个，最多10个；没有可靠规律时返回空数组
+8. source_id 必须对应聊天记录中的来源行号，禁止引用 SELF 行
+
+只输出 JSON：
+{{"expressions":[
+  {{"situation":"表示十分惊叹时","style":"使用‘我嘞个…’句式","source_id":3}},
+  {{"situation":"戏谑地夸赞时","style":"使用‘这么强！’","source_id":7}}
+]}}"""
