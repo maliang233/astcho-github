@@ -1,43 +1,144 @@
 # Astcho
 
-Astcho 是一个面向 QQ 的、隐私友好的 NoneBot2 AI 伴侣。公开版保留群聊与私聊、日程与情绪、向量记忆、图片理解、表情策展和群聊表达学习；所有本地数据默认写入被 Git 忽略的 `var/`。
+Astcho 是一个运行在 QQ 上的 AI 伴侣机器人。它基于 NoneBot2 和 OneBot v11，在群聊与私聊中提供自然对话，并通过日程、情绪、记忆、图片理解、表情策展和表达学习形成连续、具有个性的互动体验。
 
-## 要求
+## 功能
+
+- 群聊注意力：结合 @、回复关系、聊天节奏、日程状态和冷却时间判断是否参与对话。
+- 私聊对话：为每位用户维护独立上下文和记忆空间。
+- 模型分工：Planner 负责行为决策，Replyer 负责生成回复，视觉模型负责理解图片。
+- 生物记忆：使用 ChromaDB 提取、检索和去重长期与短期记忆。
+- 情绪与关系：按群维护兴奋度、害羞度，并按 `(group_id, user_id)` 记录亲密度。
+- MemeCurator：理解聊天图片，通过向量召回和模型终审选择配图。
+- 表达学习：从群聊中提炼“适用情境—表达方式”，重复验证后注入回复风格。
+- 日程系统：根据时间段调整参与意愿和说话状态。
+- 管理命令：查看状态、检查记忆和执行受权限保护的重置操作。
+
+## 技术栈
 
 - Python 3.11+
-- 独立部署的 OneBot v11 实现（例如 NapCat）
-- OpenAI-compatible 文本模型；图片功能需要支持视觉输入的模型
+- NoneBot2 / OneBot v11
+- OpenAI-compatible API
+- SQLite / ChromaDB / Pydantic
 
-## 安装与启动
+## 快速开始
+
+### 1. 准备 OneBot 服务
+
+部署支持 OneBot v11 的 QQ 客户端，例如 NapCat，并配置反向 WebSocket。Astcho 默认由 NoneBot 监听 `127.0.0.1:8080`。
+
+### 2. 安装项目
 
 ```bash
+git clone <your-repository-url>
+cd astcho
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
+```
+
+Windows PowerShell 使用 `.venv\Scripts\Activate.ps1` 激活虚拟环境。
+
+### 3. 创建配置
+
+```bash
 cp .env.example .env
 cp config/profile.example.json config/profile.json
 cp config/schedule.example.json config/schedule.json
+```
+
+编辑 `.env`，填写模型 API、管理员 QQ 号和需要启用的群号：
+
+```dotenv
+ASTCHO_LLM_API_KEY=replace-me
+ASTCHO_LLM_BASE_URL=https://api.example.com/v1
+ASTCHO_CHAT_MODEL=your-chat-model
+ASTCHO_PLANNER_MODEL=your-planner-model
+ASTCHO_VISION_MODEL=your-vision-model
+ASTCHO_ADMINS=123456789
+ASTCHO_ALLOWED_GROUPS=123456789
+```
+
+文本、Planner 和视觉模型均支持 OpenAI-compatible 接口。视觉 API 未单独设置时，会使用文本 API 的 Key 和地址。
+
+### 4. 启动
+
+```bash
 python -m astcho
 ```
 
-编辑 `.env`，至少填写 API 地址、模型名、Key 和管理员 QQ 号。NoneBot 默认监听 `127.0.0.1:8080`，请让 OneBot v11 客户端使用反向 WebSocket 连接对应地址。缺少必要配置时程序会直接给出明确错误，不会创建数据库或加载模型。
+必要配置缺失时，程序会在初始化存储或加载模型前给出错误信息。
+
+## 配置
+
+| 变量 | 用途 | 默认值 |
+| --- | --- | --- |
+| `ASTCHO_ADMINS` | 管理员 QQ 号，逗号分隔 | 必填 |
+| `ASTCHO_ALLOWED_GROUPS` | 启用的群号，留空表示不限制 | 空 |
+| `ASTCHO_DATA_DIR` | SQLite、Chroma 和图片目录 | `var` |
+| `ASTCHO_SHORT_HISTORY_LIMIT` | 私聊短期历史上限，`0` 表示不保留 | `10` |
+| `ASTCHO_MAX_MEMORIES` | 单次回复检索的记忆数量 | `8` |
+| `ASTCHO_MEME_LIMIT` | 表情库容量上限 | `300` |
+| `ASTCHO_EXPRESSION_LEARNING` | 是否启用群聊表达学习 | `true` |
+| `ASTCHO_EXPRESSION_LEARN_INTERVAL` | 两次表达学习的最短间隔（秒） | `1800` |
+| `ASTCHO_EXPRESSION_LEARN_MIN_MESSAGES` | 触发表达学习的最少消息数 | `10` |
+
+完整配置示例见 [.env.example](.env.example)。人格和日程分别通过 `config/profile.json` 与 `config/schedule.json` 配置。
 
 ## 数据与隐私
 
-- SQLite、Chroma、图片和缓存统一位于 `ASTCHO_DATA_DIR`（默认 `var/`）。
-- 私聊记忆按当前 `user_id` 隔离；群聊记忆按 `group_id` 隔离。
-- 表达学习按群隔离，只持久化抽象后的“适用情境—表达方式”，不会保存完整聊天记录。
-- 仓库不应包含 `.env`、数据库、图片、日志、真实人格或账号信息。
-- 模型输出经过结构校验；模型不能执行管理操作。
+所有运行数据位于 `ASTCHO_DATA_DIR`，默认是被 Git 忽略的 `var/`：
 
-管理命令为 `/astcho_status`、`/astcho_memories`、`/astcho_reset_memory` 和 `/astcho_schedule`，仅 `ASTCHO_ADMINS` 中的用户可用。
+```text
+var/
+├── astcho.sqlite3
+├── chroma/
+└── memes/
+```
 
-## 开发检查
+- 群聊记忆按 `group_id` 隔离，私聊记忆按当前 `user_id` 隔离。
+- 用户关系按 `(group_id, user_id)` 隔离。
+- 表达学习按群隔离，只持久化抽象后的表达规则，不保存完整聊天记录。
+- 模型输出经过 Pydantic 校验，非法 Planner 决策会降级为不回复。
+- `.env`、数据库、缓存、图片和本地人格文件不会被 Git 跟踪。
+
+## 管理命令
+
+以下命令仅允许 `ASTCHO_ADMINS` 中的用户使用：
+
+- `/astcho_status`：查看日程、记忆、表情和表达规则数量。
+- `/astcho_memories`：查看当前会话最近的记忆。
+- `/astcho_reset_memory`：重置当前会话记忆。
+- `/astcho_schedule`：查看当前日程状态。
+
+私聊中的记忆命令始终限制在当前用户，不会读取其他用户的数据。
+
+## 项目结构
+
+```text
+src/astcho/
+├── handlers/    # 群聊、私聊、命令和定时任务
+├── services/    # 对话、注意力、记忆、视觉、表情和表达学习
+├── storage/     # SQLite 与 ChromaDB
+├── domain/      # LLM 输出及领域数据模型
+├── prompts.py   # Planner、Replyer、记忆、视觉和表达学习 Prompt
+├── runtime.py   # 运行时状态、锁和后台任务
+└── bot.py       # NoneBot 初始化与程序入口
+```
+
+模块导入不会连接模型或创建数据库；这些操作统一在运行入口完成。
+
+## 开发
 
 ```bash
+pip install -e '.[dev]'
 ruff check src tests
 pytest
 python -m compileall -q src
 ```
 
-本项目采用 MIT License。提交改动前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+贡献代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## License
+
+[MIT](LICENSE)

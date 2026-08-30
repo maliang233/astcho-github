@@ -18,7 +18,7 @@ def test_error_type_is_runtime_error():
     assert issubclass(LLMResponseError, RuntimeError)
 
 
-def test_planner_accepts_legacy_emotion_field_names():
+def test_planner_accepts_prompt_emotion_field_names():
     value = PlannerDecision.model_validate({
         "action": "reply", "excitement": 0.1, "shyness": -0.1
     })
