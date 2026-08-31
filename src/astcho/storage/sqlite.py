@@ -345,7 +345,7 @@ class SQLiteStore:
     def pending_expression_reviews(self, limit: int = 5) -> list[dict[str, Any]]:
         with self._lock, self.connection() as db:
             rows = db.execute(
-                """SELECT * FROM expressions WHERE checked=0 AND rejected=0 AND count>1
+                """SELECT * FROM expressions WHERE checked=0 AND rejected=0
                 ORDER BY count DESC, last_active DESC LIMIT ?""",
                 (limit,),
             ).fetchall()

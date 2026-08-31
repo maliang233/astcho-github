@@ -100,21 +100,15 @@ class ExpressionService:
             return learned
 
     def relevant_hint(self, group_id: str, context: str, limit: int = 5) -> str:
-        expressions = self.store.list_expressions(group_id, include_singletons=False, limit=50)
-        expressions.sort(
-            key=lambda item: max(
-                SequenceMatcher(None, context[-500:], item["situation"]).ratio(),
-                min(1.0, item["count"] / 10),
-            ),
-            reverse=True,
-        )
-        selected = expressions[:limit]
+        # Keep the original runtime behavior: stable, frequently observed group
+        # expressions win. ``context`` remains part of the interface for callers,
+        # but the legacy implementation intentionally did not use it for ranking.
+        selected = self.store.list_expressions(group_id, include_singletons=False, limit=limit)
         if not selected:
             return ""
         logger.debug(
-            "📚 [表达选择] 群 %s 从 %d 条中选出 %d 条",
+            "📚 [表达选择] 群 %s 按累计次数选出 %d 条",
             group_id,
-            len(expressions),
             len(selected),
         )
         return "\n".join(f"- 当“{item['situation']}”时，可以“{item['style']}”" for item in selected)
@@ -195,8 +189,12 @@ class ExpressionService:
         if not pending or str(user_id) != pending["admin_id"]:
             return False, ""
         normalized = text.strip().lower()
-        approve = normalized in {"通过", "好", "可以", "行", "ok", "yes"}
-        reject = normalized in {"拒绝", "不", "不行", "不好", "不合适", "no"}
+        # Sentence-level feedback is accepted, e.g. “这个不太合适，拒绝吧”.
+        # Check explicit negative phrases first so “不好” is not mistaken for “好”.
+        reject_phrases = ("不合适", "不太合适", "不行", "不好", "拒绝", "no")
+        approve_phrases = ("通过", "可以", "同意", "认可", "ok", "yes", "好", "行")
+        reject = any(phrase in normalized for phrase in reject_phrases)
+        approve = not reject and any(phrase in normalized for phrase in approve_phrases)
         if not approve and not reject:
             return False, ""
         expression_id = int(pending["id"])
