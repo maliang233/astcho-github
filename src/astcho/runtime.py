@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
@@ -17,6 +18,8 @@ from astcho.services.vision import VisionService
 from astcho.storage.chroma import ChromaStore
 from astcho.storage.sqlite import SQLiteStore
 
+logger = logging.getLogger(__name__)
+
 
 class TaskManager:
     def __init__(self) -> None:
@@ -25,8 +28,19 @@ class TaskManager:
     def create(self, coroutine) -> asyncio.Task:
         task = asyncio.create_task(coroutine)
         self.tasks.add(task)
-        task.add_done_callback(self.tasks.discard)
+        task.add_done_callback(self._finished)
         return task
+
+    def _finished(self, task: asyncio.Task) -> None:
+        self.tasks.discard(task)
+        if task.cancelled():
+            return
+        try:
+            error = task.exception()
+        except asyncio.CancelledError:
+            return
+        if error is not None:
+            logger.error("Background task failed", exc_info=(type(error), error, error.__traceback__))
 
     async def close(self) -> None:
         for task in self.tasks:

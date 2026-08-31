@@ -18,7 +18,10 @@ def main() -> None:
         raise SystemExit(f"Configuration error: {exc}") from exc
 
     logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO)
-    nonebot.init()
+    # NoneBot's DEBUG startup dump contains every environment-backed setting,
+    # including API keys. Keep framework logs at INFO and emit safe, targeted
+    # application diagnostics through the standard logging module instead.
+    nonebot.init(log_level="INFO")
     driver = nonebot.get_driver()
     driver.register_adapter(Adapter)
     runtime = Runtime.build(settings)
@@ -35,4 +38,3 @@ def main() -> None:
         await runtime.tasks.close()
 
     nonebot.run()
-

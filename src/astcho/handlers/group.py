@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import time
 from datetime import datetime
@@ -15,6 +16,8 @@ from astcho.runtime import Runtime
 from astcho.services.attention import AttentionService
 from astcho.services.emotion import apply_typo
 
+logger = logging.getLogger(__name__)
+
 
 def register_group(runtime: Runtime) -> None:
     matcher = on_message(priority=20, block=False)
@@ -23,6 +26,7 @@ def register_group(runtime: Runtime) -> None:
     async def handle(bot: Bot, event: GroupMessageEvent) -> None:
         group_id, user_id = str(event.group_id), str(event.user_id)
         if runtime.settings.allowed_groups and group_id not in runtime.settings.allowed_groups:
+            logger.debug("Ignored message from group %s: not in allowlist", group_id)
             return
         text = " ".join(filter(None, [text_of(event), media_summary(event)]))
         descriptions = []
@@ -43,6 +47,8 @@ def register_group(runtime: Runtime) -> None:
                               nickname=nickname, text=text, timestamp=time.time(),
                               mentioned_bot=mentioned, replied_to_bot=replied,
                               image_description="; ".join(descriptions))
+        logger.debug("Received group message group=%s user=%s message=%s mentioned=%s replied=%s",
+                     group_id, user_id, message.message_id, mentioned, replied)
         attention = runtime.attention.setdefault(
             group_id, AttentionService(str(bot.self_id), bot_name=str(runtime.settings.profile.get("name", "Astcho")))
         )
@@ -52,6 +58,7 @@ def register_group(runtime: Runtime) -> None:
         runtime.pending_group_messages[group_id].append((event, message))
         active = runtime.aggregation_tasks.get(group_id)
         if active and not active.done():
+            logger.debug("Aggregated message %s into pending group %s", message.message_id, group_id)
             return
         task = runtime.tasks.create(_process_after_window(runtime, bot, group_id))
         runtime.aggregation_tasks[group_id] = task
@@ -64,6 +71,7 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
         runtime.aggregation_tasks.pop(group_id, None)
         if not pending:
             return
+        logger.debug("Processing %d aggregated messages for group %s", len(pending), group_id)
         event, message = pending[-1]
         attention = runtime.attention[group_id]
         schedule = runtime.schedule.current()
@@ -71,6 +79,7 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
         trigger = next((item for _, item in reversed(pending)
                         if item.mentioned_bot or item.replied_to_bot), message)
         if not attention.should_plan(trigger, schedule, excitement=mood["excitement"]):
+            logger.debug("Attention skipped planner group=%s trigger=%s", group_id, trigger.message_id)
             return
         buffered = list(attention.messages)
         span = int(buffered[-1].timestamp - buffered[0].timestamp) if len(buffered) > 1 else 0
@@ -81,6 +90,8 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
                       "participant_count": len({item.user_id for _, item in pending}),
                       "last_bot_spoke_seconds": attention.seconds_since_bot_reply()},
         )
+        logger.debug("Planner decision group=%s action=%s target=%s reason=%s",
+                     group_id, decision.action, decision.target_message_id, decision.reason)
         mood = runtime.emotion.apply(group_id, message.user_id,
                                      excitement_delta=decision.excitement_delta,
                                      shyness_delta=decision.shyness_delta,
@@ -97,11 +108,13 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
             expression_hint=runtime.expressions.relevant_hint(group_id, attention.context()),
             user_id=message.user_id, group_id=group_id,
         )
+        logger.debug("Reply generated group=%s chars=%d memories=%d", group_id, len(answer), len(memories))
         answer = apply_typo(answer, mood["excitement"])
         parts = split_reply(answer)
         quote_id = trigger.message_id if trigger.mentioned_bot or trigger.replied_to_bot else None
         for index, part in enumerate(parts):
             await bot.send(event, reply_message(part, reply_to=quote_id if index == 0 else None))
+            logger.debug("Sent reply part group=%s part=%d/%d", group_id, index + 1, len(parts))
             if index < len(parts) - 1:
                 await asyncio.sleep(random.uniform(0.8, 2.0))
         if decision.should_meme and decision.meme_query:
