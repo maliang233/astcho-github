@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import PrivateMessageEvent
+from nonebot.rule import is_type
 
 from astcho.handlers.common import text_of
 from astcho.runtime import Runtime
 
 
 def register_private(runtime: Runtime) -> None:
-    matcher = on_message(priority=20, block=False)
+    matcher = on_message(rule=is_type(PrivateMessageEvent), priority=20, block=False)
 
     @matcher.handle()
     async def handle(event: PrivateMessageEvent) -> None:

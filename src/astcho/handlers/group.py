@@ -9,6 +9,7 @@ from pathlib import Path
 
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.rule import is_type
 
 from astcho.domain.models import ChatMessage
 from astcho.handlers.common import image_urls, media_summary, reply_message, split_reply, text_of
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def register_group(runtime: Runtime) -> None:
-    matcher = on_message(priority=20, block=False)
+    matcher = on_message(rule=is_type(GroupMessageEvent), priority=20, block=False)
 
     @matcher.handle()
     async def handle(bot: Bot, event: GroupMessageEvent) -> None:
@@ -40,8 +41,10 @@ def register_group(runtime: Runtime) -> None:
                 ))
         nickname = event.sender.card or event.sender.nickname or user_id
         runtime.sqlite.touch_user(group_id, user_id, nickname)
-        mentioned = any(seg.type == "at" and str(seg.data.get("qq")) == str(bot.self_id)
-                        for seg in event.get_message())
+        mentioned = bool(event.to_me) or any(
+            seg.type == "at" and str(seg.data.get("qq")) == str(bot.self_id)
+            for seg in event.get_message()
+        )
         replied = bool(event.reply and str(event.reply.sender.user_id) == str(bot.self_id))
         message = ChatMessage(message_id=str(event.message_id), user_id=user_id,
                               nickname=nickname, text=text, timestamp=time.time(),
