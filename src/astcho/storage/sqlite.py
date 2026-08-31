@@ -4,9 +4,10 @@ import json
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 
 class SQLiteStore:
@@ -87,6 +88,16 @@ class SQLiteStore:
                     value_json TEXT NOT NULL,
                     updated_at REAL NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS llm_usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model TEXT NOT NULL,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    estimated_cost REAL NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage(created_at);
                 """
             )
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
@@ -147,9 +158,17 @@ class SQLiteStore:
             )
         return updated
 
-    def set_affinity_state(self, group_id: str, user_id: str, *, affinity: float,
-                           daily_delta: float, day: str, changed_at: float,
-                           decayed_at: float) -> None:
+    def set_affinity_state(
+        self,
+        group_id: str,
+        user_id: str,
+        *,
+        affinity: float,
+        daily_delta: float,
+        day: str,
+        changed_at: float,
+        decayed_at: float,
+    ) -> None:
         now = time.time()
         with self._lock, self.connection() as db:
             db.execute(
@@ -200,7 +219,11 @@ class SQLiteStore:
         return result
 
     def list_memes(self, *, least_used_first: bool = False) -> list[dict[str, Any]]:
-        order = "use_count ASC, last_used ASC, created_at ASC" if least_used_first else "created_at DESC"
+        order = (
+            "use_count ASC, last_used ASC, created_at ASC"
+            if least_used_first
+            else "created_at DESC"
+        )
         with self._lock, self.connection() as db:
             rows = db.execute(f"SELECT * FROM memes ORDER BY {order}").fetchall()
         return [dict(row) for row in rows]
@@ -259,13 +282,12 @@ class SQLiteStore:
 
     def get_state(self, key: str, default: Any = None) -> Any:
         with self._lock, self.connection() as db:
-            row = db.execute(
-                "SELECT value_json FROM system_state WHERE key=?", (key,)
-            ).fetchone()
+            row = db.execute("SELECT value_json FROM system_state WHERE key=?", (key,)).fetchone()
         return json.loads(row["value_json"]) if row else default
 
-    def list_expressions(self, group_id: str, *, include_singletons: bool = True,
-                         limit: int = 100) -> list[dict[str, Any]]:
+    def list_expressions(
+        self, group_id: str, *, include_singletons: bool = True, limit: int = 100
+    ) -> list[dict[str, Any]]:
         count_clause = "" if include_singletons else "AND count > 1"
         with self._lock, self.connection() as db:
             rows = db.execute(
@@ -281,36 +303,51 @@ class SQLiteStore:
             output.append(item)
         return output
 
-    def add_expression(self, group_id: str, situation: str, style: str,
-                       *, similar_id: int | None = None) -> None:
+    def add_expression(
+        self, group_id: str, situation: str, style: str, *, similar_id: int | None = None
+    ) -> None:
         now = time.time()
         with self._lock, self.connection() as db:
             if similar_id is None:
                 db.execute(
-                    """INSERT INTO expressions(group_id,situation,style,examples_json,created_at,last_active)
+                    """INSERT INTO expressions(
+                    group_id,situation,style,examples_json,created_at,last_active)
                     VALUES(?,?,?,?,?,?)""",
-                    (group_id, situation, style, json.dumps([situation], ensure_ascii=False), now, now),
+                    (
+                        group_id,
+                        situation,
+                        style,
+                        json.dumps([situation], ensure_ascii=False),
+                        now,
+                        now,
+                    ),
                 )
             else:
-                row = db.execute("SELECT examples_json FROM expressions WHERE id=?", (similar_id,)).fetchone()
+                row = db.execute(
+                    "SELECT examples_json FROM expressions WHERE id=?", (similar_id,)
+                ).fetchone()
                 examples = json.loads(row[0]) if row else []
                 if situation not in examples:
                     examples.append(situation)
                 db.execute(
-                    """UPDATE expressions SET count=count+1, examples_json=?, last_active=?, checked=0
+                    """UPDATE expressions SET count=count+1, examples_json=?,
+                    last_active=?, checked=0
                     WHERE id=? AND group_id=?""",
                     (json.dumps(examples[-20:], ensure_ascii=False), now, similar_id, group_id),
                 )
 
     def expression_count(self) -> int:
         with self._lock, self.connection() as db:
-            return int(db.execute("SELECT COUNT(*) FROM expressions WHERE rejected=0").fetchone()[0])
+            return int(
+                db.execute("SELECT COUNT(*) FROM expressions WHERE rejected=0").fetchone()[0]
+            )
 
     def pending_expression_reviews(self, limit: int = 5) -> list[dict[str, Any]]:
         with self._lock, self.connection() as db:
             rows = db.execute(
                 """SELECT * FROM expressions WHERE checked=0 AND rejected=0 AND count>1
-                ORDER BY count DESC, last_active DESC LIMIT ?""", (limit,)
+                ORDER BY count DESC, last_active DESC LIMIT ?""",
+                (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -321,4 +358,47 @@ class SQLiteStore:
                 db.execute(f"UPDATE expressions SET checked=1 WHERE id IN ({marks})", accepted_ids)
             if rejected_ids:
                 marks = ",".join("?" for _ in rejected_ids)
-                db.execute(f"UPDATE expressions SET checked=1,rejected=1 WHERE id IN ({marks})", rejected_ids)
+                db.execute(
+                    f"UPDATE expressions SET checked=1,rejected=1 WHERE id IN ({marks})",
+                    rejected_ids,
+                )
+
+    def expression_for_human_review(self) -> dict[str, Any] | None:
+        with self._lock, self.connection() as db:
+            row = db.execute(
+                """SELECT * FROM expressions WHERE checked=0 AND rejected=0
+                ORDER BY RANDOM() LIMIT 1"""
+            ).fetchone()
+        return dict(row) if row else None
+
+    def delete_expression(self, expression_id: int) -> bool:
+        with self._lock, self.connection() as db:
+            cursor = db.execute("DELETE FROM expressions WHERE id=?", (expression_id,))
+        return cursor.rowcount > 0
+
+    def record_usage(
+        self, model: str, prompt_tokens: int, completion_tokens: int, estimated_cost: float
+    ) -> None:
+        with self._lock, self.connection() as db:
+            db.execute(
+                """INSERT INTO llm_usage(
+                model,prompt_tokens,completion_tokens,estimated_cost,created_at)
+                VALUES(?,?,?,?,?)""",
+                (model, prompt_tokens, completion_tokens, estimated_cost, time.time()),
+            )
+
+    def usage_summary(self, hours: int) -> dict[str, float | int]:
+        cutoff = time.time() - hours * 3600
+        with self._lock, self.connection() as db:
+            row = db.execute(
+                """SELECT COALESCE(SUM(prompt_tokens),0) AS input_tokens,
+                COALESCE(SUM(completion_tokens),0) AS output_tokens,
+                COALESCE(SUM(estimated_cost),0) AS cost
+                FROM llm_usage WHERE created_at>=?""",
+                (cutoff,),
+            ).fetchone()
+        return {
+            "input_tokens": int(row["input_tokens"]),
+            "output_tokens": int(row["output_tokens"]),
+            "cost": float(row["cost"]),
+        }

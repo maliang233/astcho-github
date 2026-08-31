@@ -11,9 +11,14 @@ def test_user_isolated_by_group_and_user(tmp_path):
 
 def test_meme_lifecycle(tmp_path):
     store = SQLiteStore(tmp_path / "test.sqlite3")
-    store.upsert_meme({"file_id": "m1", "url": "https://example.invalid/1.jpg",
-                       "description": "smile", "tags": ["happy"]})
+    store.upsert_meme(
+        {
+            "file_id": "m1",
+            "url": "https://example.invalid/1.jpg",
+            "description": "smile",
+            "tags": ["happy"],
+        }
+    )
     store.mark_meme_used("m1")
     assert store.get_meme("m1")["use_count"] == 1
     assert store.delete_meme("m1")["file_id"] == "m1"
-

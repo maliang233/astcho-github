@@ -20,3 +20,12 @@ def test_history_has_hard_limit():
         runtime.add_history("x", "user", value)
     assert [item["content"] for item in runtime.history("x")] == ["b", "c"]
 
+
+def test_private_session_keeps_independent_fifty_message_buffer():
+    runtime = object.__new__(Runtime)
+    factory = Runtime.__dataclass_fields__["private_histories"].default_factory
+    runtime.private_histories = factory()
+    for index in range(55):
+        runtime.private_histories["private:1"].append({"role": "user", "content": str(index)})
+    assert len(runtime.private_histories["private:1"]) == 50
+    assert runtime.private_histories["private:1"][0]["content"] == "5"

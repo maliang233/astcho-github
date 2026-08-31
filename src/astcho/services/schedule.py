@@ -24,9 +24,7 @@ class ScheduleService:
     def _load(self) -> dict:
         if not self.path.exists():
             return {
-                "default": [
-                    {"start": "00:00", "end": "23:59", "talk_value": 50, "mood": "calm"}
-                ]
+                "default": [{"start": "00:00", "end": "23:59", "talk_value": 50, "mood": "calm"}]
             }
         data = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -36,8 +34,9 @@ class ScheduleService:
     def reload(self) -> None:
         self._config = self._load()
 
-    def set_override(self, talk_value: int, mood: str, *, routine: str = "override",
-                     minutes: int | None = None) -> None:
+    def set_override(
+        self, talk_value: int, mood: str, *, routine: str = "override", minutes: int | None = None
+    ) -> None:
         self._override = ScheduleState(
             talk_value=max(0, min(100, talk_value)),
             mood=mood[:200],
@@ -46,15 +45,21 @@ class ScheduleService:
         )
         self._override_until = datetime.now() + timedelta(minutes=minutes) if minutes else None
 
-    def set_routine_override(self, routine: str, *, minutes: int | None = None) -> None:
+    def set_routine_override(
+        self, routine: str, *, minutes: int | None = None, mood_append: str = ""
+    ) -> None:
         blocks = self._config.get("routines", {}).get(routine)
         if not blocks:
             raise ValueError(f"Unknown routine: {routine}")
         current = datetime.now().strftime("%H:%M")
-        block = next((item for item in blocks if _in_range(current, str(item["start"]), str(item["end"]))), blocks[0])
-        self.set_override(int(block.get("talk_value", 50)),
-                          str(block.get("mood", block.get("mood_prompt", "calm"))),
-                          routine=routine, minutes=minutes)
+        block = next(
+            (item for item in blocks if _in_range(current, str(item["start"]), str(item["end"]))),
+            blocks[0],
+        )
+        mood = str(block.get("mood", block.get("mood_prompt", "calm")))
+        if mood_append:
+            mood = f"{mood} {mood_append}"
+        self.set_override(int(block.get("talk_value", 50)), mood, routine=routine, minutes=minutes)
 
     def clear_override(self) -> None:
         self._override = None
@@ -73,7 +78,9 @@ class ScheduleService:
             if _in_range(current, str(block["start"]), str(block["end"])):
                 return ScheduleState(
                     talk_value=max(0, min(100, int(block.get("talk_value", 50)))),
-                    mood=(str(block.get("mood", block.get("mood_prompt", "calm"))) + mood_append)[:500],
+                    mood=(str(block.get("mood", block.get("mood_prompt", "calm"))) + mood_append)[
+                        :500
+                    ],
                     routine=routine_name,
                 )
         return ScheduleState(50, "calm", "fallback")
@@ -89,7 +96,11 @@ class ScheduleService:
             special.get("routine_id") or weekly.get(now.strftime("%A")) or "default_fallback"
         )
         append = str(special.get("mood_append", ""))
-        return list(routines.get(routine_name, routines.get("default_fallback", []))), routine_name, append
+        return (
+            list(routines.get(routine_name, routines.get("default_fallback", []))),
+            routine_name,
+            append,
+        )
 
 
 def _in_range(current: str, start: str, end: str) -> bool:

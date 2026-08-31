@@ -17,6 +17,15 @@ async def maintenance_loop(runtime: Runtime) -> None:
             ticks += 1
             if ticks % 6 == 0 and runtime.settings.expression_learning:
                 await runtime.expressions.review_quality()
+            if ticks % 3 == 0 and runtime.settings.expression_learning and runtime.settings.admins:
+                try:
+                    from nonebot import get_bot
+
+                    await runtime.expressions.ask_human_review(
+                        get_bot(), sorted(runtime.settings.admins)[0]
+                    )
+                except (KeyError, RuntimeError):
+                    pass
             if ticks % 12 == 0:
                 runtime.memes.enforce_limit()
                 runtime.schedule.reload()

@@ -11,8 +11,8 @@ from astcho.services.chat import ChatService
 from astcho.services.emotion import EmotionService
 from astcho.services.expression import ExpressionService
 from astcho.services.llm import LLMService
-from astcho.services.memory import MemoryService
 from astcho.services.meme import MemeCurator
+from astcho.services.memory import MemoryService
 from astcho.services.schedule import ScheduleService
 from astcho.services.vision import VisionService
 from astcho.storage.chroma import ChromaStore
@@ -40,7 +40,9 @@ class TaskManager:
         except asyncio.CancelledError:
             return
         if error is not None:
-            logger.error("Background task failed", exc_info=(type(error), error, error.__traceback__))
+            logger.error(
+                "Background task failed", exc_info=(type(error), error, error.__traceback__)
+            )
 
     async def close(self) -> None:
         for task in self.tasks:
@@ -66,23 +68,37 @@ class Runtime:
     locks: defaultdict[str, asyncio.Lock] = field(default_factory=lambda: defaultdict(asyncio.Lock))
     histories: defaultdict[str, deque] = field(default_factory=lambda: defaultdict(deque))
     attention: dict[str, AttentionService] = field(default_factory=dict)
-    pending_group_messages: defaultdict[str, list] = field(default_factory=lambda: defaultdict(list))
+    pending_group_messages: defaultdict[str, list] = field(
+        default_factory=lambda: defaultdict(list)
+    )
     aggregation_tasks: dict[str, asyncio.Task] = field(default_factory=dict)
+    private_histories: defaultdict[str, deque] = field(
+        default_factory=lambda: defaultdict(lambda: deque(maxlen=50))
+    )
+    custom_reply_tracker: defaultdict[str, dict] = field(default_factory=lambda: defaultdict(dict))
+    custom_reply_handled: defaultdict[str, dict] = field(default_factory=lambda: defaultdict(dict))
 
     @classmethod
-    def build(cls, settings: Settings) -> "Runtime":
+    def build(cls, settings: Settings) -> Runtime:
         settings.prepare_directories()
         sqlite = SQLiteStore(settings.data_dir / "astcho.sqlite3")
         vectors = ChromaStore(settings.data_dir / "chroma", settings.embedding_model)
-        llm = LLMService(settings)
+        llm = LLMService(settings, sqlite.record_usage)
         return cls(
-            settings=settings, sqlite=sqlite, vectors=vectors, llm=llm,
-            chat=ChatService(settings, llm), memory=MemoryService(vectors, llm, settings.chat_model),
+            settings=settings,
+            sqlite=sqlite,
+            vectors=vectors,
+            llm=llm,
+            chat=ChatService(settings, llm),
+            memory=MemoryService(vectors, llm, settings.chat_model),
             vision=VisionService(settings, llm, sqlite),
             memes=MemeCurator(sqlite, vectors, settings.meme_limit, llm, settings.chat_model),
-            schedule=ScheduleService(settings.schedule_path), emotion=EmotionService(sqlite, settings.admins),
+            schedule=ScheduleService(settings.schedule_path),
+            emotion=EmotionService(sqlite, settings.admins),
             expressions=ExpressionService(
-                sqlite, llm, settings.chat_model,
+                sqlite,
+                llm,
+                settings.chat_model,
                 interval=settings.expression_learn_interval,
                 minimum_messages=settings.expression_learn_min_messages,
             ),

@@ -14,19 +14,18 @@ def register_private(runtime: Runtime) -> None:
     @matcher.handle()
     async def handle(event: PrivateMessageEvent) -> None:
         user_id, text = str(event.user_id), text_of(event)
-        if not text:
+        if not text or text.startswith(("/", ".")):
             return
         key = f"private:{user_id}"
         async with runtime.locks[key]:
-            runtime.add_history(key, "user", text)
-            context = "\n".join(f"{m['role']}: {m['content']}" for m in runtime.history(key))
-            memories = runtime.memory.retrieve(text, group_id="private", user_id=user_id,
-                                               limit=runtime.settings.max_memories)
-            answer = await runtime.chat.reply(
-                context, [m.content for m in memories], runtime.schedule.current().mood,
-                emotion=runtime.emotion.state("private", user_id),
-                user_id=user_id, group_id="private",
+            handled, feedback = runtime.expressions.handle_admin_feedback(user_id, text)
+            if handled:
+                await matcher.finish(feedback)
+            history = runtime.private_histories[key]
+            history.append({"role": "user", "content": text})
+            nickname = event.sender.nickname or "朋友"
+            answer = await runtime.chat.private_reply(
+                nickname=nickname, history=list(history), latest=text
             )
-            runtime.add_history(key, "assistant", answer)
-            runtime.memory.queue_turn(text, answer, group_id="private", user_id=user_id)
+            history.append({"role": "assistant", "content": answer})
             await matcher.finish(answer)

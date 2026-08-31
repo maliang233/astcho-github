@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from astcho.config import Settings
 from astcho.domain.models import PlannerDecision, ReasoningReplyPayload, ReplyPayload
-from astcho.prompts import planner_prompt, reasoning_reply_prompt, reply_prompt
+from astcho.prompts import (
+    planner_prompt,
+    private_reply_prompt,
+    reasoning_reply_prompt,
+    reply_prompt,
+)
 from astcho.services.llm import LLMResponseError, LLMService
 
 
@@ -11,34 +16,58 @@ class ChatService:
         self.settings = settings
         self.llm = llm
 
-    async def plan(self, context: str, schedule: str, *, metadata: dict | None = None) -> PlannerDecision:
+    async def plan(
+        self, context: str, schedule: str, *, metadata: dict | None = None
+    ) -> PlannerDecision:
         metadata = metadata or {}
         try:
             return await self.llm.json_completion(
-                model=self.settings.planner_model, schema=PlannerDecision,
-                messages=[{"role": "user", "content": planner_prompt(
-                    context, bot_name=str(self.settings.profile.get("name", "Astcho")),
-                    current_time=str(metadata.get("current_time", "now")),
-                    accumulated_count=int(metadata.get("accumulated_count", 1)),
-                    time_span_seconds=int(metadata.get("time_span_seconds", 0)),
-                    participant_count=int(metadata.get("participant_count", 1)),
-                    last_bot_spoke_seconds=metadata.get("last_bot_spoke_seconds"),
-                    recent_meme_rate=str(metadata.get("recent_meme_rate", "0/10")),
-                )}], temperature=self.settings.planner_temperature,
+                model=self.settings.planner_model,
+                schema=PlannerDecision,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": planner_prompt(
+                            context,
+                            bot_name=str(self.settings.profile.get("name", "Astcho")),
+                            current_time=str(metadata.get("current_time", "now")),
+                            accumulated_count=int(metadata.get("accumulated_count", 1)),
+                            time_span_seconds=int(metadata.get("time_span_seconds", 0)),
+                            participant_count=int(metadata.get("participant_count", 1)),
+                            last_bot_spoke_seconds=metadata.get("last_bot_spoke_seconds"),
+                            recent_meme_rate=str(metadata.get("recent_meme_rate", "0/10")),
+                        ),
+                    }
+                ],
+                temperature=self.settings.planner_temperature,
                 client=self.llm.planner_client,
             )
         except LLMResponseError:
             return PlannerDecision(action="no_reply", reason="invalid planner output")
 
-    async def reply(self, context: str, memories: list[str], schedule: str, *,
-                    emotion: dict | None = None, planner_reason: str = "",
-                    expression_hint: str = "", user_id: str = "",
-                    group_id: str = "") -> str:
+    async def reply(
+        self,
+        context: str,
+        memories: list[str],
+        schedule: str,
+        *,
+        emotion: dict | None = None,
+        planner_reason: str = "",
+        expression_hint: str = "",
+        user_id: str = "",
+        group_id: str = "",
+    ) -> str:
         arguments = dict(
             bot_name=str(self.settings.profile.get("name", "Astcho")),
-            profile=self.settings.profile, context=context, memories=memories,
-            schedule=schedule, emotion=emotion, planner_reason=planner_reason,
-            expression_hint=expression_hint, user_id=user_id, group_id=group_id,
+            profile=self.settings.profile,
+            context=context,
+            memories=memories,
+            schedule=schedule,
+            emotion=emotion,
+            planner_reason=planner_reason,
+            expression_hint=expression_hint,
+            user_id=user_id,
+            group_id=group_id,
         )
         if self.settings.reasoning_enabled:
             try:
@@ -53,12 +82,36 @@ class ChatService:
                 pass
         try:
             payload = await self.llm.json_completion(
-                model=self.settings.chat_model, schema=ReplyPayload,
+                model=self.settings.chat_model,
+                schema=ReplyPayload,
                 messages=[{"role": "user", "content": reply_prompt(**arguments)}],
                 temperature=self.settings.chat_temperature,
             )
             return payload.reply
         except LLMResponseError:
+            return "我刚才有点走神了，可以再说一次吗？"
+
+    async def private_reply(self, *, nickname: str, history: list[dict], latest: str) -> str:
+        try:
+            result = await self.llm.text_completion(
+                model=self.settings.chat_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": private_reply_prompt(
+                            bot_name=str(self.settings.profile.get("name", "Astcho")),
+                            profile=self.settings.profile,
+                            nickname=nickname,
+                            history=history,
+                            latest=latest,
+                        ),
+                    }
+                ],
+                temperature=self.settings.chat_temperature,
+                max_tokens=500,
+            )
+            return _clean_plain_reply(result)
+        except Exception:
             return "我刚才有点走神了，可以再说一次吗？"
 
 
@@ -76,8 +129,12 @@ def _parse_reasoning_reply(content: str) -> ReasoningReplyPayload:
             return ReasoningReplyPayload.model_validate(json.loads(object_match.group(0)))
         except (json.JSONDecodeError, ValueError):
             pass
-    reply_match = re.search(r'["\']?reply["\']?\s*[:：]\s*["\'](.+?)["\'](?:\s*[,}]|$)', cleaned, re.DOTALL | re.I)
-    thinking_match = re.search(r'["\']?thinking["\']?\s*[:：]\s*["\'](.+?)["\'](?:\s*,|$)', cleaned, re.DOTALL | re.I)
+    reply_match = re.search(
+        r'["\']?reply["\']?\s*[:：]\s*["\'](.+?)["\'](?:\s*[,}]|$)', cleaned, re.DOTALL | re.I
+    )
+    thinking_match = re.search(
+        r'["\']?thinking["\']?\s*[:：]\s*["\'](.+?)["\'](?:\s*,|$)', cleaned, re.DOTALL | re.I
+    )
     if reply_match:
         return ReasoningReplyPayload(
             thinking=thinking_match.group(1).strip() if thinking_match else "",
@@ -86,4 +143,11 @@ def _parse_reasoning_reply(content: str) -> ReasoningReplyPayload:
     lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
     if not lines:
         raise LLMResponseError("Empty reasoning reply")
-    return ReasoningReplyPayload(reply=lines[-1].strip('"\''))
+    return ReasoningReplyPayload(reply=lines[-1].strip("\"'"))
+
+
+def _clean_plain_reply(value: str) -> str:
+    import re
+
+    value = re.sub(r"^(?:Astcho|星回|回复)\s*[:：]\s*", "", value.strip(), flags=re.I)
+    return value or "……"

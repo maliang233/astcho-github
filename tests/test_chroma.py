@@ -19,4 +19,3 @@ def test_group_memory_isolation(tmp_path):
     store.add_memory("group two", group_id="g2", user_id="u", kind="short", importance=5)
     result = store.retrieve_memories("group", group_id="g1", user_id=None, limit=10)
     assert {item.group_id for item in result} == {"g1"}
-

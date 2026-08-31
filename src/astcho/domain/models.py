@@ -9,10 +9,15 @@ class PlannerDecision(BaseModel):
     action: Literal["reply", "no_reply"] = "no_reply"
     reason: str = Field(default="", max_length=200)
     target_message_id: str | None = None
-    excitement_delta: float = Field(default=0.0, ge=-0.2, le=0.2,
-                                    validation_alias=AliasChoices("excitement_delta", "excitement"))
-    shyness_delta: float = Field(default=0.0, ge=-0.2, le=0.2,
-                                 validation_alias=AliasChoices("shyness_delta", "shyness"))
+    excitement_delta: float = Field(
+        default=0.0,
+        ge=-0.2,
+        le=0.2,
+        validation_alias=AliasChoices("excitement_delta", "excitement"),
+    )
+    shyness_delta: float = Field(
+        default=0.0, ge=-0.2, le=0.2, validation_alias=AliasChoices("shyness_delta", "shyness")
+    )
     affinity_score: float = Field(default=0.0, ge=-1.0, le=1.0)
     should_meme: bool = False
     meme_query: str | None = Field(default=None, max_length=80)
@@ -62,6 +67,11 @@ class VisionResult(BaseModel):
 
 class MemeSelection(BaseModel):
     selected_index: int | None = Field(default=None, ge=0)
+
+
+class MemeTasteDecision(BaseModel):
+    heart_throb: bool = False
+    reason: str = Field(default="", max_length=200)
 
 
 class LearnedExpression(BaseModel):

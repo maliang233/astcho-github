@@ -37,6 +37,19 @@ def _int(name: str, default: int, minimum: int = 0) -> int:
     return parsed
 
 
+def _float(name: str, default: float, minimum: float = 0.0) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        parsed = float(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a number") from exc
+    if parsed < minimum:
+        raise ConfigurationError(f"{name} must be >= {minimum}")
+    return parsed
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     llm_api_key: str
@@ -62,8 +75,12 @@ class Settings:
     max_memories: int = 8
     meme_limit: int = 300
     expression_learning: bool = True
-    expression_learn_interval: int = 1800
+    expression_learn_interval: int = 900
     expression_learn_min_messages: int = 10
+    forward_max_text_segments: int = 200
+    forward_max_media_segments: int = 20
+    input_price_per_million: float = 0.0
+    output_price_per_million: float = 0.0
     debug: bool = False
     reply_cooldown_seconds: int = 5
     planner_temperature: float = 0.1
@@ -72,7 +89,7 @@ class Settings:
     profile: dict = field(default_factory=dict, compare=False)
 
     @classmethod
-    def from_env(cls, *, load_file: bool = True) -> "Settings":
+    def from_env(cls, *, load_file: bool = True) -> Settings:
         if load_file:
             load_dotenv(override=False)
 
@@ -95,14 +112,18 @@ class Settings:
         data_dir = Path(os.getenv("ASTCHO_DATA_DIR", "var")).expanduser().resolve()
         profile_path = Path(os.getenv("ASTCHO_PROFILE_PATH", "config/profile.json"))
         schedule_path = Path(os.getenv("ASTCHO_SCHEDULE_PATH", "config/schedule.json"))
-        vision_api_key = os.getenv("ASTCHO_VISION_API_KEY", "").strip() or required[
-            "ASTCHO_LLM_API_KEY"
-        ]
-        vision_base_url = os.getenv("ASTCHO_VISION_BASE_URL", "").strip() or required[
-            "ASTCHO_LLM_BASE_URL"
-        ]
-        reasoning_api_key = os.getenv("ASTCHO_REASONING_API_KEY", "").strip() or required["ASTCHO_LLM_API_KEY"]
-        reasoning_base_url = os.getenv("ASTCHO_REASONING_BASE_URL", "").strip() or required["ASTCHO_LLM_BASE_URL"]
+        vision_api_key = (
+            os.getenv("ASTCHO_VISION_API_KEY", "").strip() or required["ASTCHO_LLM_API_KEY"]
+        )
+        vision_base_url = (
+            os.getenv("ASTCHO_VISION_BASE_URL", "").strip() or required["ASTCHO_LLM_BASE_URL"]
+        )
+        reasoning_api_key = (
+            os.getenv("ASTCHO_REASONING_API_KEY", "").strip() or required["ASTCHO_LLM_API_KEY"]
+        )
+        reasoning_base_url = (
+            os.getenv("ASTCHO_REASONING_BASE_URL", "").strip() or required["ASTCHO_LLM_BASE_URL"]
+        )
 
         profile = _load_profile(profile_path)
         return cls(
@@ -110,14 +131,17 @@ class Settings:
             llm_base_url=required["ASTCHO_LLM_BASE_URL"],
             chat_model=required["ASTCHO_CHAT_MODEL"],
             planner_model=required["ASTCHO_PLANNER_MODEL"],
-            planner_api_key=os.getenv("ASTCHO_PLANNER_API_KEY", "").strip() or required["ASTCHO_LLM_API_KEY"],
-            planner_base_url=os.getenv("ASTCHO_PLANNER_BASE_URL", "").strip() or required["ASTCHO_LLM_BASE_URL"],
+            planner_api_key=os.getenv("ASTCHO_PLANNER_API_KEY", "").strip()
+            or required["ASTCHO_LLM_API_KEY"],
+            planner_base_url=os.getenv("ASTCHO_PLANNER_BASE_URL", "").strip()
+            or required["ASTCHO_LLM_BASE_URL"],
             vision_model=os.getenv("ASTCHO_VISION_MODEL", "").strip()
             or required["ASTCHO_CHAT_MODEL"],
             vision_api_key=vision_api_key,
             vision_base_url=vision_base_url,
             reasoning_enabled=_bool(os.getenv("ASTCHO_REASONING_ENABLED"), True),
-            reasoning_model=os.getenv("ASTCHO_REASONING_MODEL", "").strip() or required["ASTCHO_CHAT_MODEL"],
+            reasoning_model=os.getenv("ASTCHO_REASONING_MODEL", "").strip()
+            or required["ASTCHO_CHAT_MODEL"],
             reasoning_api_key=reasoning_api_key,
             reasoning_base_url=reasoning_base_url,
             admins=admins,
@@ -125,15 +149,17 @@ class Settings:
             data_dir=data_dir,
             profile_path=profile_path,
             schedule_path=schedule_path,
-            embedding_model=os.getenv(
-                "ASTCHO_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"
-            ).strip(),
+            embedding_model=os.getenv("ASTCHO_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5").strip(),
             short_history_limit=_int("ASTCHO_SHORT_HISTORY_LIMIT", 10),
             max_memories=_int("ASTCHO_MAX_MEMORIES", 8, 1),
             meme_limit=_int("ASTCHO_MEME_LIMIT", 300, 1),
             expression_learning=_bool(os.getenv("ASTCHO_EXPRESSION_LEARNING"), True),
-            expression_learn_interval=_int("ASTCHO_EXPRESSION_LEARN_INTERVAL", 1800, 30),
+            expression_learn_interval=_int("ASTCHO_EXPRESSION_LEARN_INTERVAL", 900, 30),
             expression_learn_min_messages=_int("ASTCHO_EXPRESSION_LEARN_MIN_MESSAGES", 10, 3),
+            forward_max_text_segments=_int("ASTCHO_FORWARD_MAX_TEXT_SEGMENTS", 200, 3),
+            forward_max_media_segments=_int("ASTCHO_FORWARD_MAX_MEDIA_SEGMENTS", 20, 1),
+            input_price_per_million=_float("ASTCHO_INPUT_PRICE_PER_MILLION", 0.0),
+            output_price_per_million=_float("ASTCHO_OUTPUT_PRICE_PER_MILLION", 0.0),
             debug=_bool(os.getenv("ASTCHO_DEBUG")),
             reply_cooldown_seconds=_int("ASTCHO_REPLY_COOLDOWN_SECONDS", 5),
             profile=profile,

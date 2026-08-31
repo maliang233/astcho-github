@@ -5,13 +5,14 @@ Astcho 是一个运行在 QQ 上的 AI 伴侣机器人。它基于 NoneBot2 和 
 ## 功能
 
 - 群聊注意力：结合 @、回复关系、聊天节奏、日程状态和冷却时间判断是否参与对话。
-- 私聊对话：为每位用户维护独立上下文和记忆空间。
+- 私聊对话：按用户隔离会话，并保留最近 50 条独立上下文。
 - 模型分工：Planner 负责行为决策，Reasoning Replyer 结合人设、关系、情绪、记忆和表达习惯生成回复，视觉模型负责理解图片；Reasoning 不可用时自动回落到普通 Replyer。
 - 自然群聊节奏：短时间消息聚合后统一判断，支持 @/回复识别、引用回复、多段气泡和拟人化发送间隔。
 - 生物记忆：使用 ChromaDB 提取、检索和去重长期与短期记忆。
 - 情绪与关系：按群维护兴奋度、害羞度，并按 `(group_id, user_id)` 记录亲密度。
-- MemeCurator：理解聊天图片，通过向量召回和模型终审选择配图。
-- 表达学习：从群聊中提炼“适用情境—表达方式”，重复验证后注入回复风格。
+- 媒体理解：识别图片、短视频/GIF，并展开或总结合并转发；失败时安全降级。
+- MemeCurator：通过品味筛选、向量召回、模型终审和会话去重完成学习与配图。
+- 表达学习：提炼“适用情境—表达方式”，经过自动审核与管理员人工审核后注入回复风格。
 - 日程系统：根据时间段调整参与意愿和说话状态。
 - 管理命令：查看状态、检查记忆和执行受权限保护的重置操作。
 
@@ -26,7 +27,11 @@ Astcho 是一个运行在 QQ 上的 AI 伴侣机器人。它基于 NoneBot2 和 
 
 ### 1. 准备 OneBot 服务
 
-部署支持 OneBot v11 的 QQ 客户端，例如 NapCat，并配置反向 WebSocket。Astcho 默认由 NoneBot 监听 `127.0.0.1:8080`。
+部署支持 OneBot v11 的 QQ 客户端，例如 NapCat，并配置反向 WebSocket。Astcho 默认监听 `0.0.0.0:8080`。当 NapCat 运行在 Docker Desktop 中时，反向 WebSocket 地址使用：
+
+```text
+ws://host.docker.internal:8080/onebot/v11/ws
+```
 
 ### 2. 安装项目
 
@@ -77,14 +82,17 @@ python -m astcho
 | `ASTCHO_ADMINS` | 管理员 QQ 号，逗号分隔 | 必填 |
 | `ASTCHO_ALLOWED_GROUPS` | 启用的群号，留空表示不限制 | 空 |
 | `ASTCHO_DATA_DIR` | SQLite、Chroma 和图片目录 | `var` |
-| `ASTCHO_SHORT_HISTORY_LIMIT` | 私聊短期历史上限，`0` 表示不保留 | `10` |
 | `ASTCHO_REASONING_ENABLED` | 启用 Reasoning Replyer，并在失败时回落到普通 Replyer | `true` |
 | `ASTCHO_REASONING_MODEL` | Reasoning Replyer 模型 | `ASTCHO_CHAT_MODEL` |
 | `ASTCHO_MAX_MEMORIES` | 单次回复检索的记忆数量 | `8` |
 | `ASTCHO_MEME_LIMIT` | 表情库容量上限 | `300` |
 | `ASTCHO_EXPRESSION_LEARNING` | 是否启用群聊表达学习 | `true` |
-| `ASTCHO_EXPRESSION_LEARN_INTERVAL` | 两次表达学习的最短间隔（秒） | `1800` |
+| `ASTCHO_EXPRESSION_LEARN_INTERVAL` | 两次表达学习的最短间隔（秒） | `900` |
 | `ASTCHO_EXPRESSION_LEARN_MIN_MESSAGES` | 触发表达学习的最少消息数 | `10` |
+| `ASTCHO_FORWARD_MAX_TEXT_SEGMENTS` | 转发消息最大文本段数 | `200` |
+| `ASTCHO_FORWARD_MAX_MEDIA_SEGMENTS` | 转发消息执行视觉理解的最大媒体数 | `20` |
+| `ASTCHO_INPUT_PRICE_PER_MILLION` | 每百万输入 Token 价格，用于账单估算 | `0` |
+| `ASTCHO_OUTPUT_PRICE_PER_MILLION` | 每百万输出 Token 价格，用于账单估算 | `0` |
 
 完整配置示例见 [.env.example](.env.example)。人格和日程分别通过 `config/profile.json` 与 `config/schedule.json` 配置。
 
@@ -107,14 +115,19 @@ var/
 
 ## 管理命令
 
-以下命令仅允许 `ASTCHO_ADMINS` 中的用户使用：
+危险操作和诊断命令仅允许 `ASTCHO_ADMINS` 中的用户使用：
 
-- `/astcho_status`：查看日程、记忆、表情和表达规则数量。
-- `/astcho_memories`：查看当前会话最近的记忆。
+- `/astcho_status`：查看运行状态。
+- `/stats`：查看记忆、策展表情和表达规则数量。
+- `/recent` 或 `/astcho_memories`：查看当前会话最近的记忆。
 - `/astcho_reset_memory`：重置当前会话记忆。
-- `/astcho_schedule`：查看或管理日程；支持 `status`、`override <routine> [minutes]`、`clear` 和 `reload`。
-
-同时保留 `stats`、`what`、`recent`、`clean` 和 `schedule` 兼容命令。
+- `/clean`：整理并合并重复记忆，不会清空记忆库。
+- `/what`、`/del_meme`：查看或删除最近发送的表情。
+- `/learn`、`/learn_meme`、`/teach_meme`、`/reset_meme`：管理表情学习。
+- `/bill`：查看 Token 使用量和按配置价格计算的费用估算。
+- `/schedule`：支持 `status`、`override <routine> [minutes] [mood]`、`clear` 和 `reload`。
+- `/打游戏输了`、`/生病了`、`/恢复正常`：日程状态快捷命令。
+- `/shutdown`：安全停止进程。
 
 私聊中的记忆命令始终限制在当前用户，不会读取其他用户的数据。
 

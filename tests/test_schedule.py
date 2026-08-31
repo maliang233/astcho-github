@@ -12,4 +12,3 @@ def test_cross_midnight_range():
 def test_default_schedule(tmp_path):
     service = ScheduleService(tmp_path / "missing.json")
     assert service.current(datetime(2026, 1, 1, 12)).talk_value == 50
-

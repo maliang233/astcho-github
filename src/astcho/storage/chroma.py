@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import math
 import time
 import uuid
-import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -87,10 +87,12 @@ class ChromaStore:
         if group_id is not None:
             where = {"$or": [{"group_id": group_id}, {"group_id": "global"}]}
         elif user_id is not None:
-            where = {"$or": [
-                {"$and": [{"group_id": "private"}, {"user_id": user_id}]},
-                {"group_id": "global"},
-            ]}
+            where = {
+                "$or": [
+                    {"$and": [{"group_id": "private"}, {"user_id": user_id}]},
+                    {"group_id": "global"},
+                ]
+            }
         else:
             raise ValueError("group_id or user_id is required for isolated retrieval")
         result = self.memories.query(
@@ -105,7 +107,9 @@ class ChromaStore:
             metadata = result["metadatas"][0][index]
             similarity = 1.0 - float(result["distances"][0][index])
             importance = float(metadata.get("importance", 5)) / 10
-            last_accessed = float(metadata.get("last_accessed", metadata.get("created_at", time.time())))
+            last_accessed = float(
+                metadata.get("last_accessed", metadata.get("created_at", time.time()))
+            )
             elapsed_hours = max(0.0, time.time() - last_accessed) / 3600
             decay = math.exp(-float(metadata.get("decay_beta", 0.01)) * elapsed_hours)
             output.append(
@@ -127,17 +131,21 @@ class ChromaStore:
         if group_id is not None:
             where = {"$or": [{"group_id": group_id}, {"group_id": "global"}]}
         elif user_id is not None:
-            where = {"$or": [
-                {"$and": [{"group_id": "private"}, {"user_id": user_id}]},
-                {"group_id": "global"},
-            ]}
+            where = {
+                "$or": [
+                    {"$and": [{"group_id": "private"}, {"user_id": user_id}]},
+                    {"group_id": "global"},
+                ]
+            }
         else:
             raise ValueError("group_id or user_id is required")
         result = self.memories.get(where=where, include=["documents", "metadatas"])
         items = []
         for index, memory_id in enumerate(result["ids"]):
             meta = result["metadatas"][index]
-            items.append((float(meta.get("created_at", 0)), memory_id, result["documents"][index], meta))
+            items.append(
+                (float(meta.get("created_at", 0)), memory_id, result["documents"][index], meta)
+            )
         items.sort(reverse=True)
         return [
             RetrievedMemory(
@@ -161,6 +169,27 @@ class ChromaStore:
         else:
             where = {"$and": [{"group_id": group_id}, {"user_id": user_id}]}
         self.memories.delete(where=where)
+
+    def clean_duplicate_memories(self) -> int:
+        result = self.memories.get(include=["documents", "metadatas"])
+        seen: dict[tuple[str, str, str], tuple[str, float]] = {}
+        delete_ids: list[str] = []
+        for index, memory_id in enumerate(result["ids"]):
+            metadata = result["metadatas"][index]
+            content = " ".join(result["documents"][index].split()).strip()
+            key = (str(metadata.get("group_id", "")), str(metadata.get("user_id", "")), content)
+            created = float(metadata.get("created_at", 0))
+            previous = seen.get(key)
+            if previous is None:
+                seen[key] = (memory_id, created)
+            elif created > previous[1]:
+                delete_ids.append(previous[0])
+                seen[key] = (memory_id, created)
+            else:
+                delete_ids.append(memory_id)
+        if delete_ids:
+            self.memories.delete(ids=delete_ids)
+        return len(delete_ids)
 
     def upsert_meme(self, file_id: str, description: str, metadata: dict[str, str]) -> None:
         self.memes.upsert(
