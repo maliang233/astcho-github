@@ -97,6 +97,10 @@ python -m astcho
 
 完整配置示例见 [.env.example](.env.example)。人格和日程分别通过 `config/profile.json` 与 `config/schedule.json` 配置。
 
+人格配置支持 `identity`、`preferences.likes/dislikes`、`style`、`relationships` 和
+`group_profiles`。身份、性格、行为习惯、偏好与表达风格会进入群聊、私聊和 MemeCurator；
+具体用户关系只进入对应用户的回复 Prompt，不会进入全局表情策展与终审。
+
 ## 数据与隐私
 
 所有运行数据位于 `ASTCHO_DATA_DIR`，默认是被 Git 忽略的 `var/`：

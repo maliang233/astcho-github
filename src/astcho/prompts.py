@@ -4,6 +4,47 @@ from __future__ import annotations
 from datetime import datetime
 
 
+def persona_summary(profile: dict | None) -> str:
+    """Render the non-sensitive identity and taste fields shared by persona-aware prompts."""
+    profile = profile or {}
+    identity = profile.get("identity", {})
+    preferences = profile.get("preferences", {})
+
+    name = identity.get("name") or profile.get("name") or "Astcho"
+    english_name = identity.get("english_name", "")
+    self_cognition = identity.get("self_cognition") or profile.get(
+        "personality", "一个懂事温暖、偶尔调皮、有自己想法的少年。"
+    )
+    tags = _text_list(identity.get("personality_tags"))
+    habits = _text_list(identity.get("behavioral_habits"))
+    likes = _text_list(preferences.get("likes"))
+    dislikes = _text_list(preferences.get("dislikes"))
+    styles = _text_list(profile.get("style"))
+
+    lines = [f"- 身份：{name}{f' ({english_name})' if english_name else ''}"]
+    lines.append(f"- 自我认知：{self_cognition}")
+    if tags:
+        lines.append(f"- 性格：{'、'.join(tags)}")
+    if habits:
+        lines.append(f"- 行为习惯：{'、'.join(habits)}")
+    if likes:
+        lines.append(f"- 喜欢：{'、'.join(likes)}")
+    if dislikes:
+        lines.append(f"- 不喜欢：{'、'.join(dislikes)}")
+    if styles:
+        lines.append(f"- 表达偏好：{'、'.join(styles)}")
+    return "\n".join(lines)
+
+
+def _text_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    return [text] if text else []
+
+
 def planner_prompt(
     history_text: str,
     *,
@@ -78,16 +119,7 @@ def reply_prompt(
     group_id: str = "",
 ) -> str:
     emotion = emotion or {"excitement": 0, "shyness": 0, "affinity": 0.3}
-    style = "；".join(str(item) for item in profile.get("style", []))
-    identity = profile.get("identity", {})
-    if identity:
-        traits = "、".join(str(item) for item in identity.get("personality_tags", []))
-        habits = "、".join(str(item) for item in identity.get("behavioral_habits", []))
-        personality = "；".join(
-            filter(None, [str(identity.get("self_cognition", "")), traits, habits])
-        )
-    else:
-        personality = str(profile.get("personality", "一个懂事温暖、偶尔调皮、有自己想法的少年。"))
+    persona = persona_summary(profile)
     relation = profile.get("relationships", {}).get(str(user_id), {}) if user_id else {}
     relation_context = ""
     if relation:
@@ -104,8 +136,7 @@ def reply_prompt(
 当前日程状态：{schedule}
 
 ## 核心人设
-{personality}
-表达偏好：{style}
+{persona}
 {f"关系背景：{relation_context}" if relation_context else ""}
 {f"群聊画像：{group_context}" if group_context else ""}
 
@@ -169,10 +200,7 @@ def reasoning_reply_prompt(**kwargs) -> str:
 def private_reply_prompt(
     *, bot_name: str, profile: dict, nickname: str, history: list[dict], latest: str
 ) -> str:
-    identity = profile.get("identity", {})
-    personality = identity.get("self_cognition") or profile.get(
-        "personality", "一个懂事温暖、偶尔调皮、有自己想法的少年。"
-    )
+    persona = persona_summary(profile)
     lines = []
     for item in history[-15:]:
         role = "对方" if item["role"] == "user" else "你"
@@ -188,7 +216,7 @@ def private_reply_prompt(
 {chr(10).join(lines) if lines else "（暂无聊天记录）"}
 
 ## 你的设定
-{personality}
+{persona}
 
 ## 说话方式
 - 日常口语化，简短自然，像熟悉的群友而不是客服
@@ -247,16 +275,26 @@ def vision_prompt(context_text: str = "") -> str:
 {{"description":"100字内内容与含义", "is_sticker":true, "tags":["标签"], "inclination":"灵魂倾向"}}"""
 
 
-def meme_selection_prompt(reply_text: str, candidates: list[dict], mood_hint: str = "") -> str:
+def meme_selection_prompt(
+    reply_text: str,
+    candidates: list[dict],
+    mood_hint: str = "",
+    *,
+    profile: dict | None = None,
+    bot_name: str = "Astcho",
+) -> str:
     lines = []
     for index, item in enumerate(candidates):
         freshness = "最近发过，请避开" if item.get("is_recent") else "新鲜"
         lines.append(
             f"[{index}] 【{freshness}】倾向:{item.get('inclination', '')} | 内容:{item.get('description', '')}"
         )
-    return f"""你是 Astcho 的表情管理模块。你刚回复了："{reply_text}"
+    return f"""你是{bot_name}的表情管理模块。你的选择必须符合以下人格与个人品味：
+{persona_summary(profile)}
+
+{bot_name}刚回复了："{reply_text}"
 期望情绪：{mood_hint or "由回复自然判断"}
-从备选图中选一张最搭的；语义不匹配时不要硬配，尽量避免重复素材。
+从备选图中选一张最搭、也最像{bot_name}本人会发的；语义或人格不匹配时不要硬配，尽量避免重复素材。
 
 待选：
 {chr(10).join(lines)}
@@ -265,9 +303,18 @@ def meme_selection_prompt(reply_text: str, candidates: list[dict], mood_hint: st
 
 
 def meme_taste_prompt(
-    description: str, tags: list[str], inclination: str, context: str = ""
+    description: str,
+    tags: list[str],
+    inclination: str,
+    context: str = "",
+    *,
+    profile: dict | None = None,
+    bot_name: str = "Astcho",
 ) -> str:
-    return f"""你是 Astcho 的私人表情策展人。判断这张图是否值得进入长期表情收藏。
+    return f"""你是{bot_name}的私人表情策展人。你必须站在{bot_name}本人的角度判断，而不是做通用图片分类。
+
+## {bot_name}的人格与个人品味
+{persona_summary(profile)}
 
 内容：{description}
 标签：{", ".join(tags)}
@@ -277,7 +324,10 @@ def meme_taste_prompt(
 只有满足以下条件才 heart_throb=true：
 - 是能在聊天中重复使用的表情包、贴纸、GIF 或梗图
 - 情绪或社交用途明确，不只是普通照片、截图或信息图
-- Astcho 真的可能用它代替文字表达情绪
+- {bot_name}真的可能用它代替文字表达情绪，而且符合其年龄感、兴趣和说话风格
+- 纯文字标语、鸡汤祝福、中老年大字图、普通截图或照片通常不要
+- 低俗擦边、令人不适或明显违背“不喜欢”项目的内容不要
+- 拿不准时宁缺毋滥，heart_throb=false
 
 仅输出 JSON：{{"heart_throb":true,"reason":"简短理由"}}"""
 

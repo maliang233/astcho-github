@@ -24,9 +24,13 @@ class MemeCurator:
         limit: int,
         llm: LLMService | None = None,
         model: str = "",
+        profile: dict | None = None,
     ):
         self.sqlite, self.vectors, self.limit = sqlite, vectors, limit
         self.llm, self.model = llm, model
+        self.profile = profile or {}
+        identity = self.profile.get("identity", {})
+        self.bot_name = str(identity.get("name") or self.profile.get("name") or "Astcho")
         self.recent: defaultdict[str, deque[str]] = defaultdict(lambda: deque(maxlen=5))
         self.last_meme_map: dict[str, str] = {}
 
@@ -118,7 +122,14 @@ class MemeCurator:
                 messages=[
                     {
                         "role": "user",
-                        "content": meme_taste_prompt(description, tags, inclination, context),
+                        "content": meme_taste_prompt(
+                            description,
+                            tags,
+                            inclination,
+                            context,
+                            profile=self.profile,
+                            bot_name=self.bot_name,
+                        ),
                     }
                 ],
                 temperature=0.1,
@@ -182,7 +193,13 @@ class MemeCurator:
                     messages=[
                         {
                             "role": "user",
-                            "content": meme_selection_prompt(reply_text, candidates, mood_hint),
+                            "content": meme_selection_prompt(
+                                reply_text,
+                                candidates,
+                                mood_hint,
+                                profile=self.profile,
+                                bot_name=self.bot_name,
+                            ),
                         }
                     ],
                     temperature=0.1,

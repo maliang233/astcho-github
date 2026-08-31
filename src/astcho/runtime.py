@@ -100,7 +100,14 @@ class Runtime:
             chat=ChatService(settings, llm),
             memory=MemoryService(vectors, llm, settings.chat_model),
             vision=VisionService(settings, llm, sqlite),
-            memes=MemeCurator(sqlite, vectors, settings.meme_limit, llm, settings.chat_model),
+            memes=MemeCurator(
+                sqlite,
+                vectors,
+                settings.meme_limit,
+                llm,
+                settings.chat_model,
+                profile=settings.profile,
+            ),
             schedule=ScheduleService(settings.schedule_path),
             emotion=EmotionService(sqlite, settings.admins),
             expressions=ExpressionService(

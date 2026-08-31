@@ -1,4 +1,26 @@
-from astcho.prompts import memory_extraction_prompt, planner_prompt, reply_prompt
+from astcho.prompts import (
+    meme_selection_prompt,
+    meme_taste_prompt,
+    memory_extraction_prompt,
+    planner_prompt,
+    private_reply_prompt,
+    reply_prompt,
+)
+
+PERSONA = {
+    "identity": {
+        "name": "星回",
+        "self_cognition": "温暖但有主见的少年",
+        "personality_tags": ["偶尔臭屁"],
+        "behavioral_habits": ["熟人面前会吐槽"],
+    },
+    "preferences": {
+        "likes": ["音游", "甜食"],
+        "dislikes": ["鸡汤标语"],
+    },
+    "style": ["短句自然"],
+    "relationships": {"private-user": {"desc": "不得进入全局策展 Prompt"}},
+}
 
 
 def test_planner_prompt_preserves_decision_contract():
@@ -42,3 +64,41 @@ def test_memory_prompt_anchors_user_id():
     messages = memory_extraction_prompt(text="likes rhythm games", user_id="u42")
     assert "UID:u42" in messages[0]["content"]
     assert "u42" in messages[1]["content"]
+
+
+def test_persona_preferences_reach_group_and_private_reply_prompts():
+    group = reply_prompt(
+        bot_name="星回",
+        profile=PERSONA,
+        context="群聊",
+        memories=[],
+        schedule="日常",
+    )
+    private = private_reply_prompt(
+        bot_name="星回", profile=PERSONA, nickname="朋友", history=[], latest="在吗"
+    )
+    for prompt in (group, private):
+        for value in ("温暖但有主见", "偶尔臭屁", "熟人面前会吐槽", "音游", "鸡汤标语", "短句自然"):
+            assert value in prompt
+
+
+def test_meme_prompts_receive_persona_without_relationships():
+    taste = meme_taste_prompt(
+        "可爱贴纸",
+        ["卖萌"],
+        "治愈",
+        profile=PERSONA,
+        bot_name="星回",
+    )
+    selection = meme_selection_prompt(
+        "好耶",
+        [{"description": "庆祝", "inclination": "开心"}],
+        profile=PERSONA,
+        bot_name="星回",
+    )
+    for prompt in (taste, selection):
+        assert "温暖但有主见" in prompt
+        assert "音游" in prompt
+        assert "鸡汤标语" in prompt
+        assert "private-user" not in prompt
+        assert "不得进入全局策展" not in prompt
