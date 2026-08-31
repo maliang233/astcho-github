@@ -93,6 +93,7 @@ python -m astcho
 | `ASTCHO_FORWARD_MAX_MEDIA_SEGMENTS` | 转发消息执行视觉理解的最大媒体数 | `20` |
 | `ASTCHO_INPUT_PRICE_PER_MILLION` | 每百万输入 Token 价格，用于账单估算 | `0` |
 | `ASTCHO_OUTPUT_PRICE_PER_MILLION` | 每百万输出 Token 价格，用于账单估算 | `0` |
+| `ASTCHO_DEBUG` | 输出详细的注意力、Planner、Replyer、记忆、媒体与学习链路 | `false` |
 
 完整配置示例见 [.env.example](.env.example)。人格和日程分别通过 `config/profile.json` 与 `config/schedule.json` 配置。
 
@@ -104,8 +105,14 @@ python -m astcho
 var/
 ├── astcho.sqlite3
 ├── chroma/
-└── memes/
+├── memes/
+└── logs/          # 每日运行日志
 ```
+
+调试时将 `ASTCHO_DEBUG=true`。终端会按旧式阶段语义显示 `[System]`、用户输入、AI
+输出以及 `[概率]`、`[决策]`、`[推理模式]` 等节点；文件日志始终保留 DEBUG 级别，位于
+`var/logs/YYYY-MM-DD.log`。为避免泄露凭据，框架自身保持 INFO，完整 Prompt、API Key
+和模型思维链不会写入日志。
 
 - 群聊记忆按 `group_id` 隔离，私聊记忆按当前 `user_id` 隔离。
 - 用户关系按 `(group_id, user_id)` 隔离。

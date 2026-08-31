@@ -7,9 +7,12 @@ from collections import defaultdict, deque
 from difflib import SequenceMatcher
 
 from astcho.domain.models import ChatMessage, ExpressionExtraction, ExpressionReview
+from astcho.logging import get_logger, preview
 from astcho.prompts import expression_learning_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.sqlite import SQLiteStore
+
+logger = get_logger(__name__)
 
 
 class ExpressionService:
@@ -36,6 +39,12 @@ class ExpressionService:
         if not message.text or message.is_bot:
             return False
         self.buffers[group_id].append(message)
+        logger.debug(
+            "📚 [表达学习] 群 %s 已积累 %d/%d 条",
+            group_id,
+            len(self.buffers[group_id]),
+            self.minimum_messages,
+        )
         return (
             len(self.buffers[group_id]) >= self.minimum_messages
             and time.time() - self.last_learn[group_id] >= self.interval
@@ -48,6 +57,7 @@ class ExpressionService:
                 return 0
             self.buffers[group_id].clear()
             self.last_learn[group_id] = time.time()
+            logger.debug("📚 [表达学习] 群 %s 开始分析 %d 条消息", group_id, len(messages))
             lines = [
                 f"[{index}] [{'SELF' if item.is_bot else item.nickname}] {item.text}"
                 for index, item in enumerate(messages, 1)
@@ -64,7 +74,8 @@ class ExpressionService:
                     ],
                     temperature=0.3,
                 )
-            except LLMResponseError:
+            except LLMResponseError as exc:
+                logger.error("[表达学习] 学习失败: %s", exc)
                 return 0
             learned = 0
             for item in result.expressions:
@@ -81,6 +92,11 @@ class ExpressionService:
                     similar_id=existing["id"] if existing else None,
                 )
                 learned += 1
+                logger.debug("   - %s -> %s", preview(item.situation, 50), preview(item.style, 50))
+            if learned:
+                logger.system("📚 [表达学习] 在群 %s 学习到 %d 个表达方式", group_id, learned)
+            else:
+                logger.debug("📚 [表达学习] 本轮没有获得可用表达")
             return learned
 
     def relevant_hint(self, group_id: str, context: str, limit: int = 5) -> str:
@@ -95,6 +111,12 @@ class ExpressionService:
         selected = expressions[:limit]
         if not selected:
             return ""
+        logger.debug(
+            "📚 [表达选择] 群 %s 从 %d 条中选出 %d 条",
+            group_id,
+            len(expressions),
+            len(selected),
+        )
         return "\n".join(f"- 当“{item['situation']}”时，可以“{item['style']}”" for item in selected)
 
     def _find_similar(self, group_id: str, situation: str) -> dict | None:
@@ -109,7 +131,9 @@ class ExpressionService:
     async def review_quality(self) -> int:
         items = self.store.pending_expression_reviews(5)
         if not items:
+            logger.debug("📚 [表达自省] 没有待检查表达")
             return 0
+        logger.system("📚 [表达自省] 开始检查 %d 条表达", len(items))
         listing = "\n".join(
             f"[{item['id']}] 场景:{item['situation']} | 表达:{item['style']} | 次数:{item['count']}"
             for item in items
@@ -126,12 +150,14 @@ class ExpressionService:
                 temperature=0.1,
                 max_tokens=200,
             )
-        except LLMResponseError:
+        except LLMResponseError as exc:
+            logger.error("[表达自省] 检查失败: %s", exc)
             return 0
         valid = {int(item["id"]) for item in items}
         accepted = [item for item in result.accepted_ids if item in valid]
         rejected = [item for item in result.rejected_ids if item in valid and item not in accepted]
         self.store.review_expressions(accepted, rejected)
+        logger.system("📚 [表达自省] 通过 %d 条，拒绝 %d 条", len(accepted), len(rejected))
         return len(accepted) + len(rejected)
 
     async def ask_human_review(self, bot, admin_id: str) -> bool:
@@ -157,6 +183,11 @@ class ExpressionService:
             self.pending_human_review = None
             raise
         self.last_human_review = now
+        logger.system(
+            "📚 [表达反思] 向管理员提问: %s -> %s",
+            preview(item["situation"], 50),
+            preview(item["style"], 50),
+        )
         return True
 
     def handle_admin_feedback(self, user_id: str, text: str) -> tuple[bool, str]:
@@ -171,8 +202,10 @@ class ExpressionService:
         expression_id = int(pending["id"])
         if approve:
             self.store.review_expressions([expression_id], [])
+            logger.system("📚 [表达反思] 管理员通过表达 #%d", expression_id)
         else:
             self.store.delete_expression(expression_id)
+            logger.system("📚 [表达反思] 管理员拒绝并删除表达 #%d", expression_id)
         self.pending_human_review = None
         return True, "✅"
 

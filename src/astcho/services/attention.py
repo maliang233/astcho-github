@@ -22,6 +22,7 @@ class AttentionService:
         self.consecutive_no_reply = 0
         self.watching_until = 0.0
         self._recent_meme_flags: deque[bool] = deque(maxlen=10)
+        self.last_trace: dict[str, float | str | bool] = {}
 
     def add(self, message: ChatMessage) -> None:
         self.messages.append(message)
@@ -42,11 +43,31 @@ class AttentionService:
             or self.bot_name.lower() in message.text.lower()
         )
         if schedule.talk_value < 10:
-            return message.mentioned_bot or message.replied_to_bot
+            result = message.mentioned_bot or message.replied_to_bot
+            self.last_trace = {
+                "reason": "日程低活跃，仅响应提及/引用",
+                "direct": result,
+                "talk": schedule.talk_value,
+                "result": result,
+            }
+            return result
         if direct:
+            self.last_trace = {
+                "reason": "直接提及、引用或呼名",
+                "direct": True,
+                "talk": schedule.talk_value,
+                "result": True,
+            }
             return True
         now = time.time()
         if self.last_bot_reply and now - self.last_bot_reply < 5:
+            self.last_trace = {
+                "reason": "回复冷却中",
+                "direct": False,
+                "talk": schedule.talk_value,
+                "result": False,
+                "silence": now - self.last_bot_reply,
+            }
             return False
         silence_bonus = (
             min(0.2, max(0, now - self.last_bot_reply) / 600 * 0.05) if self.last_bot_reply else 0
@@ -72,7 +93,20 @@ class AttentionService:
         probability *= frequency_factor * threshold_factor * watching_factor
         probability *= 1 + max(-1, min(1, excitement)) * 0.8
         sample = random.random() if random_value is None else random_value
-        return sample < max(0.0, min(1.0, probability))
+        probability = max(0.0, min(1.0, probability))
+        result = sample < probability
+        self.last_trace = {
+            "reason": "概率判定",
+            "direct": False,
+            "talk": schedule.talk_value,
+            "silence": (now - self.last_bot_reply) if self.last_bot_reply else 0,
+            "excitement": excitement,
+            "frequency": frequency_factor,
+            "probability": probability,
+            "sample": sample,
+            "result": result,
+        }
+        return result
 
     def update_after_planner(self, replied: bool) -> None:
         if replied:

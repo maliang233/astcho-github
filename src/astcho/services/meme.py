@@ -7,10 +7,13 @@ from pathlib import Path
 import httpx
 
 from astcho.domain.models import MemeSelection, MemeTasteDecision
+from astcho.logging import get_logger, preview
 from astcho.prompts import meme_selection_prompt, meme_taste_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.chroma import ChromaStore
 from astcho.storage.sqlite import SQLiteStore
+
+logger = get_logger(__name__)
 
 
 class MemeCurator:
@@ -46,6 +49,7 @@ class MemeCurator:
             self.sqlite.delete_meme(file_id)
             raise
         self.enforce_limit()
+        logger.system("✨ [策展人] 学会了: [%s] %s", inclination, preview(description, 50))
         return True
 
     async def learn_remote(
@@ -106,6 +110,7 @@ class MemeCurator:
     ) -> bool:
         if self.llm is None:
             return False
+        logger.system("🤔 [策展人] 品味判定中... %s", preview(description, 40))
         try:
             decision = await self.llm.json_completion(
                 model=self.model,
@@ -119,10 +124,13 @@ class MemeCurator:
                 temperature=0.1,
                 max_tokens=160,
             )
-        except LLMResponseError:
+        except LLMResponseError as exc:
+            logger.warning("品味判定异常，跳过收藏: %s", exc)
             return False
         if not decision.heart_throb:
+            logger.system("❌ [策展人] 跳过 | %s", preview(decision.reason, 80))
             return False
+        logger.system("✅ [策展人] 收藏 | %s", preview(decision.reason, 80))
         return await self.learn_remote(
             url=url, description=description, tags=tags, inclination=inclination
         )
@@ -137,16 +145,34 @@ class MemeCurator:
                 record["score"] = candidate["score"]
                 record["is_recent"] = record["file_id"] in self.recent[session_key]
                 output.append(record)
-        return output[:limit]
+        selected = output[:limit]
+        logger.system("🔍 [策展人初筛] query='%s' → %d 条", preview(query, 60), len(selected))
+        for candidate in selected:
+            logger.debug(
+                "   [%s] sim=%.3f | %s | %s",
+                candidate["file_id"][:8],
+                candidate["score"],
+                candidate.get("inclination", ""),
+                preview(candidate.get("description", ""), 50),
+            )
+        return selected
 
     async def select(
         self, reply_text: str, mood_hint: str = "", *, session_key: str = "global"
     ) -> dict | None:
         candidates = self.search(f"{reply_text} [情绪:{mood_hint}]", 8, session_key=session_key)
         if not candidates:
+            logger.debug("🎨 [自动配图] 没有达到阈值的候选")
             return None
         if len(candidates) == 1 or self.llm is None:
+            logger.system("🎯 [策展人终审] 单一候选，选择 %s", candidates[0]["file_id"][:8])
             return candidates[0]
+        logger.system(
+            "🎯 [策展人终审] reply='%s' mood=%s 候选=%d 条",
+            preview(reply_text, 60),
+            mood_hint,
+            len(candidates),
+        )
         for _ in range(2):
             try:
                 selection = await self.llm.json_completion(
@@ -162,8 +188,10 @@ class MemeCurator:
                     max_tokens=100,
                 )
             except LLMResponseError:
+                logger.warning("[策展人终审] 输出无效，正在重试")
                 continue
             index = selection.selected_index
+            logger.system("📊 [策展人终审] 结果: idx=%s", index)
             if index is not None and index < len(candidates):
                 return candidates[index]
         return None
@@ -210,9 +238,12 @@ class MemeCurator:
         path = record.get("local_path")
         if path:
             Path(path).unlink(missing_ok=True)
+        logger.system("🗑️ [策展人] 已删除: %s...", file_id[:8])
         return True
 
     def enforce_limit(self) -> None:
         overflow = self.sqlite.meme_count() - self.limit
+        if overflow > 0:
+            logger.system("🧹 [策展人] 数量超限，淘汰 %d 张最少使用的", overflow)
         for record in self.sqlite.list_memes(least_used_first=True)[: max(0, overflow)]:
             self.delete(record["file_id"])

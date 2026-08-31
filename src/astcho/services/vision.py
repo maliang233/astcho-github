@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import logging
 
 import httpx
 
 from astcho.config import Settings
 from astcho.domain.models import VisionResult
+from astcho.logging import get_logger, preview
 from astcho.prompts import vision_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.sqlite import SQLiteStore
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VisionService:
@@ -23,13 +23,15 @@ class VisionService:
         key = hashlib.sha256(url.encode()).hexdigest()
         cached = self.store.get_vision(key)
         if cached:
+            logger.debug("🖼️ [视觉缓存] 命中 %s", key[:8])
             return VisionResult.model_validate(cached)
+        logger.debug("🖼️ [视觉缓存] 未命中 %s，下载图片", key[:8])
         try:
             async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
                 response = await client.get(url)
                 response.raise_for_status()
         except httpx.HTTPError as exc:
-            logger.warning("Image download failed: %s", exc)
+            logger.warning("图片下载失败: %s", exc)
             return VisionResult(description="[图片]")
         mime = response.headers.get("content-type", "image/jpeg").split(";")[0]
         encoded = base64.b64encode(response.content).decode()
@@ -52,9 +54,10 @@ class VisionService:
                 ],
             )
         except (LLMResponseError, ValueError, httpx.HTTPError) as exc:
-            logger.warning("Image recognition failed: %s", exc)
+            logger.warning("图片识别失败: %s", exc)
             result = VisionResult(description="无法可靠识别的图片")
         self.store.set_vision(key, result.model_dump())
+        logger.debug("🖼️ [视觉缓存] 已写入 %s | %s", key[:8], preview(result.description, 80))
         return result
 
     async def describe_video(self, url: str, *, file_id: str = "") -> str:
@@ -63,6 +66,7 @@ class VisionService:
         key = "video:" + (file_id or hashlib.sha256(url.encode()).hexdigest())
         cached = self.store.get_vision(key)
         if cached:
+            logger.debug("🎬 [视觉缓存] 视频命中 %s", key[-8:])
             return str(cached.get("description", "[视频]"))
         prompt = (
             "描述这个短视频或 GIF 的主要画面、文字、动作以及在群聊中表达的情绪或梗。控制在100字内。"
@@ -85,7 +89,8 @@ class VisionService:
             )
             description = result.strip()[:500] or "[视频]"
         except Exception as exc:
-            logger.warning("Video recognition failed: %s", exc)
+            logger.warning("视频识别失败: %s", exc)
             description = "[视频]"
         self.store.set_vision(key, {"description": description})
+        logger.debug("🎬 [视觉] 识别完成: %s", preview(description, 100))
         return description

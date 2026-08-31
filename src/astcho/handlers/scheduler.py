@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 
+from astcho.logging import get_logger
 from astcho.runtime import Runtime
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def maintenance_loop(runtime: Runtime) -> None:
@@ -13,10 +13,13 @@ async def maintenance_loop(runtime: Runtime) -> None:
     while True:
         await asyncio.sleep(300)
         try:
-            await runtime.memory.flush()
+            logger.debug("⏰ [定时任务] 开始第 %d 次维护", ticks + 1)
+            memories = await runtime.memory.flush()
             ticks += 1
+            logger.debug("🧠 [定时任务] 记忆持久化新增 %d 条", memories)
             if ticks % 6 == 0 and runtime.settings.expression_learning:
-                await runtime.expressions.review_quality()
+                reviewed = await runtime.expressions.review_quality()
+                logger.debug("📚 [定时任务] 表达自省处理 %d 条", reviewed)
             if ticks % 3 == 0 and runtime.settings.expression_learning and runtime.settings.admins:
                 try:
                     from nonebot import get_bot
@@ -29,6 +32,8 @@ async def maintenance_loop(runtime: Runtime) -> None:
             if ticks % 12 == 0:
                 runtime.memes.enforce_limit()
                 runtime.schedule.reload()
+                logger.system("📅 日程配置已重新加载")
             runtime.sqlite.set_state("last_maintenance", {"ok": True})
+            logger.debug("✅ [定时任务] 第 %d 次维护完成", ticks)
         except Exception:
-            logger.exception("Scheduled maintenance failed")
+            logger.exception("定时维护任务出错")

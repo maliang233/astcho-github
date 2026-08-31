@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
 
 from astcho.domain.models import MemoryExtraction, RetrievedMemory
+from astcho.logging import get_logger, preview
 from astcho.prompts import memory_extraction_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.chroma import ChromaStore
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MemoryService:
@@ -23,6 +23,12 @@ class MemoryService:
     ) -> None:
         key = (group_id, user_id)
         self._pending[key].append((user_name, user_text, bot_text))
+        logger.debug(
+            "📝 [记忆队列] session=%s/%s | %d/5 回合",
+            group_id,
+            user_id,
+            len(self._pending[key]),
+        )
         if len(self._pending[key]) >= 5:
             turns = self._pending.pop(key)
             import asyncio
@@ -40,13 +46,16 @@ class MemoryService:
             total += await self.extract(
                 _format_turns(turns), group_id=group_id, user_id=user_id, user_name=turns[-1][0]
             )
+        logger.debug("🧠 [记忆持久化] 刷新 %d 个会话，新增 %d 条", len(pending), total)
         return total
 
     async def extract(
         self, text: str, *, group_id: str, user_id: str, user_name: str = "用户"
     ) -> int:
         if len(text.strip()) < 6:
+            logger.debug("🧠 [记忆提取] 文本过短，跳过")
             return 0
+        logger.debug("🧠 [记忆提取] session=%s/%s | 输入=%s", group_id, user_id, preview(text, 80))
         try:
             result = await self.llm.json_completion(
                 model=self.model,
@@ -57,7 +66,8 @@ class MemoryService:
                     ),
                 ],
             )
-        except LLMResponseError:
+        except LLMResponseError as exc:
+            logger.warning("记忆提取输出无效，已跳过: %s", exc)
             return 0
         count = 0
         existing = self.vectors.retrieve_memories(
@@ -77,6 +87,7 @@ class MemoryService:
                 importance=atom.importance,
             )
             count += 1
+        logger.system("🧠 [记忆] 提取 %d 条，去重后写入 %d 条", len(result.memories), count)
         return count
 
     def retrieve(
@@ -88,7 +99,9 @@ class MemoryService:
             user_id=user_id if group_id == "private" else None,
             limit=max(50, limit),
         )
-        return [item for item in memories if item.score >= 0.35][:limit]
+        selected = [item for item in memories if item.score >= 0.35][:limit]
+        logger.debug("🔍 [记忆检索] 候选 %d 条，阈值后保留 %d 条", len(memories), len(selected))
+        return selected
 
     def clean(self) -> int:
         return self.vectors.clean_duplicate_memories()

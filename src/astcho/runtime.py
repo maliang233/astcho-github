@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from astcho.config import Settings
+from astcho.logging import get_logger
 from astcho.services.attention import AttentionService
 from astcho.services.chat import ChatService
 from astcho.services.emotion import EmotionService
@@ -18,7 +18,7 @@ from astcho.services.vision import VisionService
 from astcho.storage.chroma import ChromaStore
 from astcho.storage.sqlite import SQLiteStore
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TaskManager:
@@ -40,9 +40,7 @@ class TaskManager:
         except asyncio.CancelledError:
             return
         if error is not None:
-            logger.error(
-                "Background task failed", exc_info=(type(error), error, error.__traceback__)
-            )
+            logger.error("后台任务异常结束", exc_info=(type(error), error, error.__traceback__))
 
     async def close(self) -> None:
         for task in self.tasks:
@@ -81,9 +79,19 @@ class Runtime:
     @classmethod
     def build(cls, settings: Settings) -> Runtime:
         settings.prepare_directories()
+        logger.system("📂 运行数据目录: %s", settings.data_dir)
         sqlite = SQLiteStore(settings.data_dir / "astcho.sqlite3")
+        logger.system("✅ SQLite 已连接 (WAL + 外键)")
         vectors = ChromaStore(settings.data_dir / "chroma", settings.embedding_model)
+        logger.system("✅ ChromaDB 已连接")
         llm = LLMService(settings, sqlite.record_usage)
+        logger.system(
+            "🤖 模型配置: Planner=%s | Replyer=%s | Vision=%s | Reasoning=%s",
+            settings.planner_model,
+            settings.chat_model,
+            settings.vision_model,
+            settings.reasoning_model,
+        )
         return cls(
             settings=settings,
             sqlite=sqlite,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from astcho.config import Settings
 from astcho.domain.models import PlannerDecision, ReasoningReplyPayload, ReplyPayload
+from astcho.logging import get_logger, preview
 from astcho.prompts import (
     planner_prompt,
     private_reply_prompt,
@@ -9,6 +10,8 @@ from astcho.prompts import (
     reply_prompt,
 )
 from astcho.services.llm import LLMResponseError, LLMService
+
+logger = get_logger(__name__)
 
 
 class ChatService:
@@ -20,6 +23,13 @@ class ChatService:
         self, context: str, schedule: str, *, metadata: dict | None = None
     ) -> PlannerDecision:
         metadata = metadata or {}
+        logger.debug(
+            "🧠 [Planner] model=%s | 上下文 %d 字 | 累积 %s 条 / %s 人",
+            self.settings.planner_model,
+            len(context),
+            metadata.get("accumulated_count", 1),
+            metadata.get("participant_count", 1),
+        )
         try:
             return await self.llm.json_completion(
                 model=self.settings.planner_model,
@@ -42,7 +52,8 @@ class ChatService:
                 temperature=self.settings.planner_temperature,
                 client=self.llm.planner_client,
             )
-        except LLMResponseError:
+        except LLMResponseError as exc:
+            logger.warning("Planner 输出校验失败，安全降级为 NO_REPLY: %s", exc)
             return PlannerDecision(action="no_reply", reason="invalid planner output")
 
     async def reply(
@@ -70,6 +81,13 @@ class ChatService:
             group_id=group_id,
         )
         if self.settings.reasoning_enabled:
+            logger.debug(
+                "🧮 [推理模式] model=%s | 上下文 %d 字 | 记忆 %d 条 | 表达提示 %s",
+                self.settings.reasoning_model,
+                len(context),
+                len(memories),
+                "有" if expression_hint else "无",
+            )
             try:
                 raw = await self.llm.raw_completion(
                     model=self.settings.reasoning_model,
@@ -77,9 +95,16 @@ class ChatService:
                     temperature=self.settings.reasoning_temperature,
                     client=self.llm.reasoning_client,
                 )
-                return _parse_reasoning_reply(raw).reply
-            except (LLMResponseError, ValueError):
-                pass
+                parsed = _parse_reasoning_reply(raw)
+                logger.debug(
+                    "🧮 [推理模式] 解析成功 | thinking=%d 字 | reply=%d 字",
+                    len(parsed.thinking),
+                    len(parsed.reply),
+                )
+                return parsed.reply
+            except (LLMResponseError, ValueError) as exc:
+                logger.warning("Reasoning Replyer 解析失败，降级普通 Replyer: %s", exc)
+        logger.debug("💬 [Replyer] model=%s | 正在生成回复...", self.settings.chat_model)
         try:
             payload = await self.llm.json_completion(
                 model=self.settings.chat_model,
@@ -88,10 +113,17 @@ class ChatService:
                 temperature=self.settings.chat_temperature,
             )
             return payload.reply
-        except LLMResponseError:
+        except LLMResponseError as exc:
+            logger.warning("Replyer 输出校验失败，使用安全回复: %s", exc)
             return "我刚才有点走神了，可以再说一次吗？"
 
     async def private_reply(self, *, nickname: str, history: list[dict], latest: str) -> str:
+        logger.debug(
+            "🔒 [私聊 Replyer] 用户=%s | 历史=%d 条 | latest=%s",
+            nickname,
+            len(history),
+            preview(latest),
+        )
         try:
             result = await self.llm.text_completion(
                 model=self.settings.chat_model,
@@ -111,7 +143,8 @@ class ChatService:
                 max_tokens=500,
             )
             return _clean_plain_reply(result)
-        except Exception:
+        except Exception as exc:
+            logger.error("[私聊 Replyer] 生成失败: %s", exc)
             return "我刚才有点走神了，可以再说一次吗？"
 
 

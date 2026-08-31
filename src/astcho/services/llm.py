@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
+import time
 from typing import TypeVar
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 from astcho.config import Settings
+from astcho.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
@@ -44,6 +45,13 @@ class LLMService:
         client: AsyncOpenAI | None = None,
     ) -> ModelT:
         active_client = client or self.text_client
+        started = time.perf_counter()
+        logger.debug(
+            "🤖 [LLM] 请求 %s | model=%s | max_tokens=%d",
+            schema.__name__,
+            model,
+            max_tokens,
+        )
         response = await active_client.chat.completions.create(
             model=model,
             messages=messages,
@@ -53,10 +61,16 @@ class LLMService:
         )
         self._record_usage(model, response)
         content = response.choices[0].message.content or ""
+        logger.debug(
+            "✅ [LLM] %s 完成 | %.2fs | 输出 %d 字",
+            schema.__name__,
+            time.perf_counter() - started,
+            len(content),
+        )
         try:
             return schema.model_validate_json(_extract_json(content))
         except (ValidationError, json.JSONDecodeError) as exc:
-            logger.warning("Rejected invalid %s response: %s", schema.__name__, exc)
+            logger.warning("[LLM校验] 拒绝非法 %s 输出: %s", schema.__name__, exc)
             raise LLMResponseError(f"Invalid {schema.__name__} response") from exc
 
     async def text_completion(
@@ -67,6 +81,8 @@ class LLMService:
         temperature: float = 0.7,
         max_tokens: int = 800,
     ) -> str:
+        started = time.perf_counter()
+        logger.debug("🤖 [LLM] 文本请求 | model=%s | max_tokens=%d", model, max_tokens)
         response = await self.text_client.chat.completions.create(
             model=model,
             messages=messages,
@@ -74,7 +90,13 @@ class LLMService:
             max_tokens=max_tokens,
         )
         self._record_usage(model, response)
-        return (response.choices[0].message.content or "").strip()
+        content = (response.choices[0].message.content or "").strip()
+        logger.debug(
+            "✅ [LLM] 文本完成 | %.2fs | 输出 %d 字",
+            time.perf_counter() - started,
+            len(content),
+        )
+        return content
 
     async def raw_completion(
         self,
@@ -85,11 +107,19 @@ class LLMService:
         max_tokens: int = 1200,
         client: AsyncOpenAI | None = None,
     ) -> str:
+        started = time.perf_counter()
+        logger.debug("🤖 [LLM] 原始请求 | model=%s | max_tokens=%d", model, max_tokens)
         response = await (client or self.text_client).chat.completions.create(
             model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
         )
         self._record_usage(model, response)
-        return (response.choices[0].message.content or "").strip()
+        content = (response.choices[0].message.content or "").strip()
+        logger.debug(
+            "✅ [LLM] 原始请求完成 | %.2fs | 输出 %d 字",
+            time.perf_counter() - started,
+            len(content),
+        )
+        return content
 
     def _record_usage(self, model: str, response) -> None:
         usage = getattr(response, "usage", None)
@@ -101,6 +131,13 @@ class LLMService:
             prompt * self.settings.input_price_per_million
             + completion * self.settings.output_price_per_million
         ) / 1_000_000
+        logger.debug(
+            "💰 [用量] %s | In:%d Out:%d%s",
+            model,
+            prompt,
+            completion,
+            f" | ¥{cost:.5f}" if cost else "",
+        )
         self.usage_callback(model, prompt, completion, cost)
 
 
