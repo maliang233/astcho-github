@@ -43,6 +43,8 @@ class LLMService:
         temperature: float = 0.1,
         max_tokens: int = 800,
         client: AsyncOpenAI | None = None,
+        thinking: bool | None = None,
+        empty_retries: int = 1,
     ) -> ModelT:
         active_client = client or self.text_client
         started = time.perf_counter()
@@ -52,21 +54,38 @@ class LLMService:
             model,
             max_tokens,
         )
-        response = await active_client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
-        self._record_usage(model, response)
-        content = response.choices[0].message.content or ""
-        logger.debug(
-            "✅ [LLM] %s 完成 | %.2fs | 输出 %d 字",
-            schema.__name__,
-            time.perf_counter() - started,
-            len(content),
-        )
+        request = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        if thinking is not None:
+            request["extra_body"] = {"thinking": {"type": "enabled" if thinking else "disabled"}}
+        content = ""
+        for attempt in range(empty_retries + 1):
+            response = await active_client.chat.completions.create(**request)
+            self._record_usage(model, response)
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            reasoning = getattr(choice.message, "reasoning_content", "") or ""
+            logger.debug(
+                "✅ [LLM] %s 完成 | %.2fs | finish=%s | 输出=%d字 | reasoning=%d字",
+                schema.__name__,
+                time.perf_counter() - started,
+                getattr(choice, "finish_reason", "unknown"),
+                len(content),
+                len(str(reasoning)),
+            )
+            if content.strip() or attempt >= empty_retries:
+                break
+            logger.warning(
+                "[LLM] %s 返回空内容，自动重试 %d/%d",
+                schema.__name__,
+                attempt + 1,
+                empty_retries,
+            )
         try:
             return schema.model_validate_json(_extract_json(content))
         except (ValidationError, json.JSONDecodeError) as exc:
@@ -123,22 +142,26 @@ class LLMService:
 
     def _record_usage(self, model: str, response) -> None:
         usage = getattr(response, "usage", None)
-        if self.usage_callback is None or usage is None:
+        if usage is None:
             return
         prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
         completion = int(getattr(usage, "completion_tokens", 0) or 0)
+        details = getattr(usage, "completion_tokens_details", None)
+        reasoning_tokens = int(getattr(details, "reasoning_tokens", 0) or 0)
         cost = (
             prompt * self.settings.input_price_per_million
             + completion * self.settings.output_price_per_million
         ) / 1_000_000
         logger.debug(
-            "💰 [用量] %s | In:%d Out:%d%s",
+            "💰 [用量] %s | In:%d Out:%d%s%s",
             model,
             prompt,
             completion,
+            f" Reasoning:{reasoning_tokens}" if reasoning_tokens else "",
             f" | ¥{cost:.5f}" if cost else "",
         )
-        self.usage_callback(model, prompt, completion, cost)
+        if self.usage_callback is not None:
+            self.usage_callback(model, prompt, completion, cost)
 
 
 def _extract_json(content: str) -> str:

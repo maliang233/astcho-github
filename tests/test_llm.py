@@ -1,10 +1,12 @@
+import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
-from astcho.domain.models import PlannerDecision
+from astcho.domain.models import MemeTasteDecision, PlannerDecision
 from astcho.services.chat import _parse_reasoning_reply
-from astcho.services.llm import LLMResponseError, _extract_json
+from astcho.services.llm import LLMResponseError, LLMService, _extract_json
 
 
 def test_extract_wrapped_json():
@@ -19,6 +21,47 @@ def test_invalid_json_rejected():
 
 def test_error_type_is_runtime_error():
     assert issubclass(LLMResponseError, RuntimeError)
+
+
+def test_json_completion_retries_empty_content_and_disables_thinking():
+    calls = []
+
+    class Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            content = "" if len(calls) == 1 else '{"heart_throb":false,"reason":"普通图片"}'
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=content, reasoning_content="内部判断"),
+                        finish_reason="length" if len(calls) == 1 else "stop",
+                    )
+                ],
+                usage=None,
+            )
+
+    service = object.__new__(LLMService)
+    service.settings = SimpleNamespace(
+        input_price_per_million=0,
+        output_price_per_million=0,
+    )
+    service.usage_callback = None
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    result = asyncio.run(
+        service.json_completion(
+            model="test",
+            schema=MemeTasteDecision,
+            messages=[{"role": "user", "content": "JSON"}],
+            max_tokens=512,
+            client=client,
+            thinking=False,
+        )
+    )
+
+    assert result.heart_throb is False
+    assert len(calls) == 2
+    assert calls[0]["max_tokens"] == 512
+    assert calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
 
 
 def test_planner_accepts_prompt_emotion_field_names():

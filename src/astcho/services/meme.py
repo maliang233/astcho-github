@@ -122,7 +122,8 @@ class MemeCurator:
                     }
                 ],
                 temperature=0.1,
-                max_tokens=160,
+                max_tokens=512,
+                thinking=False,
             )
         except LLMResponseError as exc:
             logger.warning("品味判定异常，跳过收藏: %s", exc)
@@ -186,6 +187,7 @@ class MemeCurator:
                     ],
                     temperature=0.1,
                     max_tokens=100,
+                    thinking=False,
                 )
             except LLMResponseError:
                 logger.warning("[策展人终审] 输出无效，正在重试")

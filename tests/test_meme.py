@@ -28,8 +28,11 @@ def test_curator_enforces_limit(tmp_path):
 
 
 def test_curator_taste_gate_rejects_ordinary_image(tmp_path):
+    calls = []
+
     class LLM:
         async def json_completion(self, **kwargs):
+            calls.append(kwargs)
             return MemeTasteDecision(heart_throb=False, reason="普通截图")
 
     sqlite = SQLiteStore(tmp_path / "test.sqlite3")
@@ -45,3 +48,5 @@ def test_curator_taste_gate_rejects_ordinary_image(tmp_path):
     )
     assert accepted is False
     assert sqlite.meme_count() == 0
+    assert calls[0]["max_tokens"] == 512
+    assert calls[0]["thinking"] is False
