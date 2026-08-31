@@ -52,6 +52,8 @@ class Runtime:
     locks: defaultdict[str, asyncio.Lock] = field(default_factory=lambda: defaultdict(asyncio.Lock))
     histories: defaultdict[str, deque] = field(default_factory=lambda: defaultdict(deque))
     attention: dict[str, AttentionService] = field(default_factory=dict)
+    pending_group_messages: defaultdict[str, list] = field(default_factory=lambda: defaultdict(list))
+    aggregation_tasks: dict[str, asyncio.Task] = field(default_factory=dict)
 
     @classmethod
     def build(cls, settings: Settings) -> "Runtime":
@@ -64,7 +66,7 @@ class Runtime:
             chat=ChatService(settings, llm), memory=MemoryService(vectors, llm, settings.chat_model),
             vision=VisionService(settings, llm, sqlite),
             memes=MemeCurator(sqlite, vectors, settings.meme_limit, llm, settings.chat_model),
-            schedule=ScheduleService(settings.schedule_path), emotion=EmotionService(sqlite),
+            schedule=ScheduleService(settings.schedule_path), emotion=EmotionService(sqlite, settings.admins),
             expressions=ExpressionService(
                 sqlite, llm, settings.chat_model,
                 interval=settings.expression_learn_interval,

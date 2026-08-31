@@ -1,4 +1,6 @@
 .env
+config/profile.json
+config/schedule.json
 .venv/
 __pycache__/
 *.py[cod]
@@ -10,9 +12,9 @@ htmlcov/
 .vscode/
 .DS_Store
 var/
+.local-backups/
 logs/
 *.db
 *.sqlite3
 *.bin
 *.pickle
-

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageEvent
+from nonebot.params import CommandArg
 
 from astcho.runtime import Runtime
 
 
 def register_commands(runtime: Runtime) -> None:
-    status = on_command("astcho_status", priority=5, block=True)
-    memories = on_command("astcho_memories", priority=5, block=True)
-    reset = on_command("astcho_reset_memory", priority=5, block=True)
-    schedule = on_command("astcho_schedule", priority=5, block=True)
+    status = on_command("astcho_status", aliases={"stats", "what"}, priority=5, block=True)
+    memories = on_command("astcho_memories", aliases={"recent"}, priority=5, block=True)
+    reset = on_command("astcho_reset_memory", aliases={"clean"}, priority=5, block=True)
+    schedule = on_command("astcho_schedule", aliases={"schedule"}, priority=5, block=True)
 
     async def require_admin(event: MessageEvent, matcher) -> bool:
         if runtime.is_admin(str(event.user_id)):
@@ -54,8 +55,21 @@ def register_commands(runtime: Runtime) -> None:
         await reset.finish("记忆已重置。")
 
     @schedule.handle()
-    async def handle_schedule(event: MessageEvent) -> None:
+    async def handle_schedule(event: MessageEvent, args: Message = CommandArg()) -> None:
         if not await require_admin(event, schedule):
             return
+        tokens = args.extract_plain_text().strip().split()
+        try:
+            if tokens and tokens[0] == "clear":
+                runtime.schedule.clear_override()
+            elif tokens and tokens[0] == "reload":
+                runtime.schedule.reload()
+            elif tokens and tokens[0] == "override" and len(tokens) >= 2:
+                minutes = int(tokens[2]) if len(tokens) >= 3 else None
+                runtime.schedule.set_routine_override(tokens[1], minutes=minutes)
+            elif tokens and tokens[0] not in {"status"}:
+                await schedule.finish("用法：/schedule status | override <routine> [minutes] | clear | reload")
+        except (ValueError, IndexError) as exc:
+            await schedule.finish(f"日程设置失败：{exc}")
         state = runtime.schedule.current()
         await schedule.finish(f"{state.routine}: talk={state.talk_value}, mood={state.mood}")

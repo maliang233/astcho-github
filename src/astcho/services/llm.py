@@ -24,8 +24,14 @@ class LLMService:
         self.text_client = AsyncOpenAI(
             api_key=settings.llm_api_key, base_url=settings.llm_base_url
         )
+        self.planner_client = AsyncOpenAI(
+            api_key=settings.planner_api_key, base_url=settings.planner_base_url
+        )
         self.vision_client = AsyncOpenAI(
             api_key=settings.vision_api_key, base_url=settings.vision_base_url
+        )
+        self.reasoning_client = AsyncOpenAI(
+            api_key=settings.reasoning_api_key, base_url=settings.reasoning_base_url
         )
 
     async def json_completion(
@@ -69,6 +75,14 @@ class LLMService:
         )
         return (response.choices[0].message.content or "").strip()
 
+    async def raw_completion(self, *, model: str, messages: list[dict],
+                             temperature: float = 0.1, max_tokens: int = 1200,
+                             client: AsyncOpenAI | None = None) -> str:
+        response = await (client or self.text_client).chat.completions.create(
+            model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
+        )
+        return (response.choices[0].message.content or "").strip()
+
 
 def _extract_json(content: str) -> str:
     content = content.strip()
@@ -78,4 +92,3 @@ def _extract_json(content: str) -> str:
     if not match:
         raise json.JSONDecodeError("No JSON object", content, 0)
     return match.group(0)
-

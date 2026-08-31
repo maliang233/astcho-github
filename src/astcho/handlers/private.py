@@ -24,7 +24,8 @@ def register_private(runtime: Runtime) -> None:
             answer = await runtime.chat.reply(
                 context, [m.content for m in memories], runtime.schedule.current().mood,
                 emotion=runtime.emotion.state("private", user_id),
+                user_id=user_id, group_id="private",
             )
             runtime.add_history(key, "assistant", answer)
-            runtime.tasks.create(runtime.memory.extract(text, group_id="private", user_id=user_id))
+            runtime.memory.queue_turn(text, answer, group_id="private", user_id=user_id)
             await matcher.finish(answer)

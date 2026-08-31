@@ -43,9 +43,15 @@ class Settings:
     llm_base_url: str
     chat_model: str
     planner_model: str
+    planner_api_key: str
+    planner_base_url: str
     vision_model: str
     vision_api_key: str
     vision_base_url: str
+    reasoning_enabled: bool
+    reasoning_model: str
+    reasoning_api_key: str
+    reasoning_base_url: str
     admins: frozenset[str]
     allowed_groups: frozenset[str]
     data_dir: Path
@@ -62,6 +68,7 @@ class Settings:
     reply_cooldown_seconds: int = 5
     planner_temperature: float = 0.1
     chat_temperature: float = 0.7
+    reasoning_temperature: float = 0.1
     profile: dict = field(default_factory=dict, compare=False)
 
     @classmethod
@@ -94,6 +101,8 @@ class Settings:
         vision_base_url = os.getenv("ASTCHO_VISION_BASE_URL", "").strip() or required[
             "ASTCHO_LLM_BASE_URL"
         ]
+        reasoning_api_key = os.getenv("ASTCHO_REASONING_API_KEY", "").strip() or required["ASTCHO_LLM_API_KEY"]
+        reasoning_base_url = os.getenv("ASTCHO_REASONING_BASE_URL", "").strip() or required["ASTCHO_LLM_BASE_URL"]
 
         profile = _load_profile(profile_path)
         return cls(
@@ -101,10 +110,16 @@ class Settings:
             llm_base_url=required["ASTCHO_LLM_BASE_URL"],
             chat_model=required["ASTCHO_CHAT_MODEL"],
             planner_model=required["ASTCHO_PLANNER_MODEL"],
+            planner_api_key=os.getenv("ASTCHO_PLANNER_API_KEY", "").strip() or required["ASTCHO_LLM_API_KEY"],
+            planner_base_url=os.getenv("ASTCHO_PLANNER_BASE_URL", "").strip() or required["ASTCHO_LLM_BASE_URL"],
             vision_model=os.getenv("ASTCHO_VISION_MODEL", "").strip()
             or required["ASTCHO_CHAT_MODEL"],
             vision_api_key=vision_api_key,
             vision_base_url=vision_base_url,
+            reasoning_enabled=_bool(os.getenv("ASTCHO_REASONING_ENABLED"), True),
+            reasoning_model=os.getenv("ASTCHO_REASONING_MODEL", "").strip() or required["ASTCHO_CHAT_MODEL"],
+            reasoning_api_key=reasoning_api_key,
+            reasoning_base_url=reasoning_base_url,
             admins=admins,
             allowed_groups=_csv_set(os.getenv("ASTCHO_ALLOWED_GROUPS")),
             data_dir=data_dir,

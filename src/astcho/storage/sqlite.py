@@ -89,6 +89,15 @@ class SQLiteStore:
                 );
                 """
             )
+            columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+            for name, definition in {
+                "affinity_daily_delta": "REAL NOT NULL DEFAULT 0",
+                "affinity_day": "TEXT NOT NULL DEFAULT ''",
+                "affinity_changed_at": "REAL NOT NULL DEFAULT 0",
+                "affinity_decayed_at": "REAL NOT NULL DEFAULT 0",
+            }.items():
+                if name not in columns:
+                    db.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
 
     def touch_user(self, group_id: str, user_id: str, nickname: str) -> None:
         now = time.time()
@@ -137,6 +146,18 @@ class SQLiteStore:
                 (updated, now, group_id, user_id),
             )
         return updated
+
+    def set_affinity_state(self, group_id: str, user_id: str, *, affinity: float,
+                           daily_delta: float, day: str, changed_at: float,
+                           decayed_at: float) -> None:
+        now = time.time()
+        with self._lock, self.connection() as db:
+            db.execute(
+                """UPDATE users SET affinity=?, affinity_daily_delta=?, affinity_day=?,
+                affinity_changed_at=?, affinity_decayed_at=?, interactions=interactions+1,
+                updated_at=? WHERE group_id=? AND user_id=?""",
+                (affinity, daily_delta, day, changed_at, decayed_at, now, group_id, user_id),
+            )
 
     def upsert_meme(self, meme: dict[str, Any]) -> None:
         now = time.time()
@@ -284,3 +305,20 @@ class SQLiteStore:
     def expression_count(self) -> int:
         with self._lock, self.connection() as db:
             return int(db.execute("SELECT COUNT(*) FROM expressions WHERE rejected=0").fetchone()[0])
+
+    def pending_expression_reviews(self, limit: int = 5) -> list[dict[str, Any]]:
+        with self._lock, self.connection() as db:
+            rows = db.execute(
+                """SELECT * FROM expressions WHERE checked=0 AND rejected=0 AND count>1
+                ORDER BY count DESC, last_active DESC LIMIT ?""", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def review_expressions(self, accepted_ids: list[int], rejected_ids: list[int]) -> None:
+        with self._lock, self.connection() as db:
+            if accepted_ids:
+                marks = ",".join("?" for _ in accepted_ids)
+                db.execute(f"UPDATE expressions SET checked=1 WHERE id IN ({marks})", accepted_ids)
+            if rejected_ids:
+                marks = ",".join("?" for _ in rejected_ids)
+                db.execute(f"UPDATE expressions SET checked=1,rejected=1 WHERE id IN ({marks})", rejected_ids)

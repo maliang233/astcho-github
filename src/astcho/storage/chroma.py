@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -84,9 +85,12 @@ class ChromaStore:
         if self.memories.count() == 0:
             return []
         if group_id is not None:
-            where = {"group_id": group_id}
+            where = {"$or": [{"group_id": group_id}, {"group_id": "global"}]}
         elif user_id is not None:
-            where = {"$and": [{"group_id": "private"}, {"user_id": user_id}]}
+            where = {"$or": [
+                {"$and": [{"group_id": "private"}, {"user_id": user_id}]},
+                {"group_id": "global"},
+            ]}
         else:
             raise ValueError("group_id or user_id is required for isolated retrieval")
         result = self.memories.query(
@@ -101,11 +105,14 @@ class ChromaStore:
             metadata = result["metadatas"][0][index]
             similarity = 1.0 - float(result["distances"][0][index])
             importance = float(metadata.get("importance", 5)) / 10
+            last_accessed = float(metadata.get("last_accessed", metadata.get("created_at", time.time())))
+            elapsed_hours = max(0.0, time.time() - last_accessed) / 3600
+            decay = math.exp(-float(metadata.get("decay_beta", 0.01)) * elapsed_hours)
             output.append(
                 RetrievedMemory(
                     memory_id=memory_id,
                     content=result["documents"][0][index],
-                    score=similarity * (1 + importance),
+                    score=similarity * (1 + importance * decay),
                     kind=str(metadata.get("kind", "short")),
                     group_id=str(metadata.get("group_id", "private")),
                     user_id=str(metadata.get("user_id", "unknown")),
@@ -118,9 +125,12 @@ class ChromaStore:
         self, *, group_id: str | None, user_id: str | None, limit: int = 5
     ) -> list[RetrievedMemory]:
         if group_id is not None:
-            where = {"group_id": group_id}
+            where = {"$or": [{"group_id": group_id}, {"group_id": "global"}]}
         elif user_id is not None:
-            where = {"$and": [{"group_id": "private"}, {"user_id": user_id}]}
+            where = {"$or": [
+                {"$and": [{"group_id": "private"}, {"user_id": user_id}]},
+                {"group_id": "global"},
+            ]}
         else:
             raise ValueError("group_id or user_id is required")
         result = self.memories.get(where=where, include=["documents", "metadatas"])

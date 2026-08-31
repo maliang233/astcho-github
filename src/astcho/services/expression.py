@@ -6,7 +6,7 @@ import time
 from collections import defaultdict, deque
 from difflib import SequenceMatcher
 
-from astcho.domain.models import ChatMessage, ExpressionExtraction
+from astcho.domain.models import ChatMessage, ExpressionExtraction, ExpressionReview
 from astcho.prompts import expression_learning_prompt
 from astcho.services.llm import LLMResponseError, LLMService
 from astcho.storage.sqlite import SQLiteStore
@@ -85,6 +85,27 @@ class ExpressionService:
             if similarity >= score:
                 best, score = item, similarity
         return best
+
+    async def review_quality(self) -> int:
+        items = self.store.pending_expression_reviews(5)
+        if not items:
+            return 0
+        listing = "\n".join(f"[{item['id']}] 场景:{item['situation']} | 表达:{item['style']} | 次数:{item['count']}"
+                            for item in items)
+        prompt = f"""审核以下从群聊中归纳的表达习惯。保留自然、可复用、无私人信息的规则；拒绝过拟合、冒犯、包含身份信息或语义不明的规则。
+{listing}
+只输出 JSON：{{"accepted_ids":[1],"rejected_ids":[2]}}"""
+        try:
+            result = await self.llm.json_completion(model=self.model, schema=ExpressionReview,
+                                                    messages=[{"role": "user", "content": prompt}],
+                                                    temperature=0.1, max_tokens=200)
+        except LLMResponseError:
+            return 0
+        valid = {int(item["id"]) for item in items}
+        accepted = [item for item in result.accepted_ids if item in valid]
+        rejected = [item for item in result.rejected_ids if item in valid and item not in accepted]
+        self.store.review_expressions(accepted, rejected)
+        return len(accepted) + len(rejected)
 
 
 def _unsafe(value: str) -> bool:

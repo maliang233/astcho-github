@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 
 from astcho.domain.models import MemoryExtraction, RetrievedMemory
 from astcho.prompts import memory_extraction_prompt
@@ -15,8 +16,28 @@ class MemoryService:
         self.vectors = vectors
         self.llm = llm
         self.model = model
+        self._pending: defaultdict[tuple[str, str], list[tuple[str, str, str]]] = defaultdict(list)
 
-    async def extract(self, text: str, *, group_id: str, user_id: str) -> int:
+    def queue_turn(self, user_text: str, bot_text: str, *, group_id: str,
+                   user_id: str, user_name: str = "用户") -> None:
+        key = (group_id, user_id)
+        self._pending[key].append((user_name, user_text, bot_text))
+        if len(self._pending[key]) >= 5:
+            turns = self._pending.pop(key)
+            import asyncio
+            asyncio.create_task(self.extract(_format_turns(turns), group_id=group_id,
+                                             user_id=user_id, user_name=user_name))
+
+    async def flush(self) -> int:
+        pending, self._pending = self._pending, defaultdict(list)
+        total = 0
+        for (group_id, user_id), turns in pending.items():
+            total += await self.extract(_format_turns(turns), group_id=group_id,
+                                        user_id=user_id, user_name=turns[-1][0])
+        return total
+
+    async def extract(self, text: str, *, group_id: str, user_id: str,
+                      user_name: str = "用户") -> int:
         if len(text.strip()) < 6:
             return 0
         try:
@@ -24,7 +45,7 @@ class MemoryService:
                 model=self.model,
                 schema=MemoryExtraction,
                 messages=[
-                    *memory_extraction_prompt(text=text[:3000], user_id=user_id),
+                    *memory_extraction_prompt(text=text[:3000], user_id=user_id, user_name=user_name),
                 ],
             )
         except LLMResponseError:
@@ -43,9 +64,14 @@ class MemoryService:
         return count
 
     def retrieve(self, query: str, *, group_id: str, user_id: str, limit: int) -> list[RetrievedMemory]:
-        return self.vectors.retrieve_memories(
+        memories = self.vectors.retrieve_memories(
             query,
             group_id=group_id if group_id != "private" else None,
             user_id=user_id if group_id == "private" else None,
-            limit=limit,
+            limit=max(50, limit),
         )
+        return [item for item in memories if item.score >= 0.35][:limit]
+
+
+def _format_turns(turns: list[tuple[str, str, str]]) -> str:
+    return "\n".join(f"{name}: {user}\nAstcho: {bot}" for name, user, bot in turns)

@@ -6,7 +6,8 @@ Astcho 是一个运行在 QQ 上的 AI 伴侣机器人。它基于 NoneBot2 和 
 
 - 群聊注意力：结合 @、回复关系、聊天节奏、日程状态和冷却时间判断是否参与对话。
 - 私聊对话：为每位用户维护独立上下文和记忆空间。
-- 模型分工：Planner 负责行为决策，Replyer 负责生成回复，视觉模型负责理解图片。
+- 模型分工：Planner 负责行为决策，Reasoning Replyer 结合人设、关系、情绪、记忆和表达习惯生成回复，视觉模型负责理解图片；Reasoning 不可用时自动回落到普通 Replyer。
+- 自然群聊节奏：短时间消息聚合后统一判断，支持 @/回复识别、引用回复、多段气泡和拟人化发送间隔。
 - 生物记忆：使用 ChromaDB 提取、检索和去重长期与短期记忆。
 - 情绪与关系：按群维护兴奋度、害羞度，并按 `(group_id, user_id)` 记录亲密度。
 - MemeCurator：理解聊天图片，通过向量召回和模型终审选择配图。
@@ -59,7 +60,7 @@ ASTCHO_ADMINS=123456789
 ASTCHO_ALLOWED_GROUPS=123456789
 ```
 
-文本、Planner 和视觉模型均支持 OpenAI-compatible 接口。视觉 API 未单独设置时，会使用文本 API 的 Key 和地址。
+文本、Planner、Reasoning Replyer 和视觉模型均支持 OpenAI-compatible 接口。独立 API 未设置时，会使用文本 API 的 Key 和地址。
 
 ### 4. 启动
 
@@ -77,6 +78,8 @@ python -m astcho
 | `ASTCHO_ALLOWED_GROUPS` | 启用的群号，留空表示不限制 | 空 |
 | `ASTCHO_DATA_DIR` | SQLite、Chroma 和图片目录 | `var` |
 | `ASTCHO_SHORT_HISTORY_LIMIT` | 私聊短期历史上限，`0` 表示不保留 | `10` |
+| `ASTCHO_REASONING_ENABLED` | 启用 Reasoning Replyer，并在失败时回落到普通 Replyer | `true` |
+| `ASTCHO_REASONING_MODEL` | Reasoning Replyer 模型 | `ASTCHO_CHAT_MODEL` |
 | `ASTCHO_MAX_MEMORIES` | 单次回复检索的记忆数量 | `8` |
 | `ASTCHO_MEME_LIMIT` | 表情库容量上限 | `300` |
 | `ASTCHO_EXPRESSION_LEARNING` | 是否启用群聊表达学习 | `true` |
@@ -109,7 +112,9 @@ var/
 - `/astcho_status`：查看日程、记忆、表情和表达规则数量。
 - `/astcho_memories`：查看当前会话最近的记忆。
 - `/astcho_reset_memory`：重置当前会话记忆。
-- `/astcho_schedule`：查看当前日程状态。
+- `/astcho_schedule`：查看或管理日程；支持 `status`、`override <routine> [minutes]`、`clear` 和 `reload`。
+
+同时保留 `stats`、`what`、`recent`、`clean` 和 `schedule` 兼容命令。
 
 私聊中的记忆命令始终限制在当前用户，不会读取其他用户的数据。
 
@@ -121,7 +126,7 @@ src/astcho/
 ├── services/    # 对话、注意力、记忆、视觉、表情和表达学习
 ├── storage/     # SQLite 与 ChromaDB
 ├── domain/      # LLM 输出及领域数据模型
-├── prompts.py   # Planner、Replyer、记忆、视觉和表达学习 Prompt
+├── prompts.py   # Planner、Reasoning Replyer、Replyer、记忆、视觉和表达学习 Prompt
 ├── runtime.py   # 运行时状态、锁和后台任务
 └── bot.py       # NoneBot 初始化与程序入口
 ```

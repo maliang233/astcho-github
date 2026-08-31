@@ -9,12 +9,17 @@ logger = logging.getLogger(__name__)
 
 
 async def maintenance_loop(runtime: Runtime) -> None:
+    ticks = 0
     while True:
-        await asyncio.sleep(3600)
+        await asyncio.sleep(300)
         try:
-            runtime.memes.enforce_limit()
-            runtime.schedule.reload()
+            await runtime.memory.flush()
+            ticks += 1
+            if ticks % 6 == 0 and runtime.settings.expression_learning:
+                await runtime.expressions.review_quality()
+            if ticks % 12 == 0:
+                runtime.memes.enforce_limit()
+                runtime.schedule.reload()
             runtime.sqlite.set_state("last_maintenance", {"ok": True})
         except Exception:
             logger.exception("Scheduled maintenance failed")
-

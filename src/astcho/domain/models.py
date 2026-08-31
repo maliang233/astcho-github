@@ -30,6 +30,19 @@ class ReplyPayload(BaseModel):
         return value
 
 
+class ReasoningReplyPayload(BaseModel):
+    thinking: str = Field(default="", max_length=4000)
+    reply: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("reply")
+    @classmethod
+    def clean_reply(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("reply cannot be blank")
+        return value
+
+
 class MemoryAtom(BaseModel):
     content: str = Field(min_length=2, max_length=500)
     importance: int = Field(default=5, ge=1, le=10)
@@ -59,6 +72,11 @@ class LearnedExpression(BaseModel):
 
 class ExpressionExtraction(BaseModel):
     expressions: list[LearnedExpression] = Field(default_factory=list, max_length=10)
+
+
+class ExpressionReview(BaseModel):
+    accepted_ids: list[int] = Field(default_factory=list, max_length=20)
+    rejected_ids: list[int] = Field(default_factory=list, max_length=20)
 
 
 class RetrievedMemory(BaseModel):
