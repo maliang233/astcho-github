@@ -52,6 +52,7 @@ class VisionService:
                         ],
                     }
                 ],
+                thinking=False,
             )
         except (LLMResponseError, ValueError, httpx.HTTPError) as exc:
             logger.warning("图片识别失败: %s", exc)
@@ -86,6 +87,7 @@ class VisionService:
                 ],
                 temperature=0.1,
                 max_tokens=300,
+                thinking=False,
             )
             description = result.strip()[:500] or "[视频]"
         except Exception as exc:

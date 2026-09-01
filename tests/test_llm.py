@@ -23,7 +23,7 @@ def test_error_type_is_runtime_error():
     assert issubclass(LLMResponseError, RuntimeError)
 
 
-def test_json_completion_retries_empty_content_and_disables_thinking():
+def test_json_completion_retries_empty_content_and_disables_thinking_by_default():
     calls = []
 
     class Completions:
@@ -54,7 +54,6 @@ def test_json_completion_retries_empty_content_and_disables_thinking():
             messages=[{"role": "user", "content": "JSON"}],
             max_tokens=512,
             client=client,
-            thinking=False,
         )
     )
 

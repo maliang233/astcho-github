@@ -101,7 +101,8 @@ def test_reply_prompts_preserve_peer_tone_and_kaomoji_habit():
         assert "邻家弟弟" in prompt
         assert "上位者" in prompt
         assert "(´・ω・`)" in prompt
-        assert "不必句句都用" in prompt
+        assert "不要机械地句句添加" in prompt
+    assert "一般不超过 30 字" in reasoning
 
 
 def test_meme_prompts_receive_persona_without_relationships():

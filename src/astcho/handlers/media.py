@@ -124,6 +124,7 @@ async def describe_forward(runtime: Runtime, bot: Bot, forward_id: str) -> str:
             messages=[{"role": "user", "content": forward_summary_prompt(lines)}],
             temperature=0.5,
             max_tokens=80,
+            thinking=False,
         )
         result = f"[转发 x{len(lines)}条] {summary.strip()[:30]}"
         logger.debug("📜 [转发消息] 总结完成: %s", preview(result, 100))

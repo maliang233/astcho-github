@@ -43,7 +43,7 @@ class LLMService:
         temperature: float = 0.1,
         max_tokens: int = 800,
         client: AsyncOpenAI | None = None,
-        thinking: bool | None = None,
+        thinking: bool | None = False,
         empty_retries: int = 1,
     ) -> ModelT:
         active_client = client or self.text_client
@@ -99,7 +99,7 @@ class LLMService:
         messages: list[dict],
         temperature: float = 0.7,
         max_tokens: int = 800,
-        thinking: bool | None = None,
+        thinking: bool | None = False,
     ) -> str:
         started = time.perf_counter()
         logger.debug("🤖 [LLM] 文本请求 | model=%s | max_tokens=%d", model, max_tokens)
@@ -129,7 +129,7 @@ class LLMService:
         temperature: float = 0.1,
         max_tokens: int = 1200,
         client: AsyncOpenAI | None = None,
-        thinking: bool | None = None,
+        thinking: bool | None = False,
     ) -> str:
         started = time.perf_counter()
         logger.debug("🤖 [LLM] 原始请求 | model=%s | max_tokens=%d", model, max_tokens)
