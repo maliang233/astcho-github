@@ -10,6 +10,7 @@ from astcho.handlers.group import (
     _handle_custom_follow,
     _process_after_window,
     is_bot_mentioned,
+    qq_nickname,
 )
 from astcho.handlers.media import describe_event_media, describe_forward
 from astcho.services.attention import AttentionService
@@ -43,6 +44,13 @@ def test_real_onebot_at_segment_is_detected():
 def test_adapter_to_me_is_authoritative_even_without_at_segment():
     event = group_event(Message("星回，说句话"), to_me=True)
     assert is_bot_mentioned(event, "10001") is True
+
+
+def test_group_sender_uses_qq_nickname_instead_of_group_card():
+    event = group_event(Message("你好"))
+    event.sender.nickname = "QQ昵称"
+    event.sender.card = "群名片"
+    assert qq_nickname(event) == "QQ昵称"
 
 
 def test_local_meme_is_encoded_for_containerized_napcat(tmp_path):

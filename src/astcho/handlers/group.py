@@ -42,7 +42,7 @@ def register_group(runtime: Runtime) -> None:
                     context=text[-500:],
                 )
             )
-        nickname = event.sender.card or event.sender.nickname or user_id
+        nickname = qq_nickname(event)
         runtime.sqlite.touch_user(group_id, user_id, nickname)
         mentioned = is_bot_mentioned(event, str(bot.self_id))
         replied = bool(event.reply and str(event.reply.sender.user_id) == str(bot.self_id))
@@ -308,3 +308,8 @@ def is_bot_mentioned(event: GroupMessageEvent, bot_id: str) -> bool:
         segment.type == "at" and str(segment.data.get("qq")) == str(bot_id)
         for segment in event.get_message()
     )
+
+
+def qq_nickname(event: GroupMessageEvent) -> str:
+    """Return the account nickname, never the group-specific card."""
+    return event.sender.nickname or str(event.user_id)
