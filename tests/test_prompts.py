@@ -45,6 +45,8 @@ def test_planner_prompt_preserves_decision_contract():
         "meme_query",
     ):
         assert field in prompt
+    assert "大家正在复读或跟风" in prompt
+    assert "不要仅因内容没有直接指向你" in prompt
 
 
 def test_reply_prompt_keeps_persona_emotion_memory_and_context():
@@ -110,6 +112,9 @@ def test_reply_prompts_preserve_peer_tone_and_kaomoji_habit():
     assert "一般不超过30字" in reasoning
     assert "推理步骤（一步一步思考！）" in reasoning
     assert "小明: 说句话" in reasoning
+    for prompt in (group, reasoning):
+        assert "像群友一样直接跟一句" in prompt
+        assert "不要解释或点评复读行为" in prompt
 
 
 def test_legacy_group_profiles_never_reach_reply_prompts():
