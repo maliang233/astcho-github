@@ -14,6 +14,10 @@ from astcho.services.llm import LLMResponseError, LLMService
 logger = get_logger(__name__)
 
 
+class DegradedReply(str):
+    """A local safety reply that must not be learned as conversation content."""
+
+
 class ChatService:
     def __init__(self, settings: Settings, llm: LLMService):
         self.settings = settings
@@ -51,6 +55,8 @@ class ChatService:
                 ],
                 temperature=self.settings.planner_temperature,
                 client=self.llm.planner_client,
+                max_tokens=512,
+                thinking=False,
             )
         except LLMResponseError as exc:
             logger.warning("Planner 输出校验失败，安全降级为 NO_REPLY: %s", exc)
@@ -94,6 +100,8 @@ class ChatService:
                     messages=[{"role": "user", "content": reasoning_reply_prompt(**arguments)}],
                     temperature=self.settings.reasoning_temperature,
                     client=self.llm.reasoning_client,
+                    max_tokens=4096,
+                    thinking=True,
                 )
                 parsed = _parse_reasoning_reply(raw)
                 logger.debug(
@@ -111,11 +119,13 @@ class ChatService:
                 schema=ReplyPayload,
                 messages=[{"role": "user", "content": reply_prompt(**arguments)}],
                 temperature=self.settings.chat_temperature,
+                max_tokens=512,
+                thinking=False,
             )
             return payload.reply
         except LLMResponseError as exc:
             logger.warning("Replyer 输出校验失败，使用安全回复: %s", exc)
-            return "我刚才有点走神了，可以再说一次吗？"
+            return DegradedReply("唔……刚才没反应过来，再说一遍嘛 (´・ω・`)")
 
     async def private_reply(self, *, nickname: str, history: list[dict], latest: str) -> str:
         logger.debug(
@@ -141,11 +151,12 @@ class ChatService:
                 ],
                 temperature=self.settings.chat_temperature,
                 max_tokens=500,
+                thinking=False,
             )
             return _clean_plain_reply(result)
         except Exception as exc:
             logger.error("[私聊 Replyer] 生成失败: %s", exc)
-            return "我刚才有点走神了，可以再说一次吗？"
+            return "唔……刚才没反应过来，再说一遍嘛 (´・ω・`)"
 
 
 def _parse_reasoning_reply(content: str) -> ReasoningReplyPayload:

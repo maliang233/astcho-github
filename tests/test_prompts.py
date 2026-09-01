@@ -4,6 +4,7 @@ from astcho.prompts import (
     memory_extraction_prompt,
     planner_prompt,
     private_reply_prompt,
+    reasoning_reply_prompt,
     reply_prompt,
 )
 
@@ -80,6 +81,27 @@ def test_persona_preferences_reach_group_and_private_reply_prompts():
     for prompt in (group, private):
         for value in ("温暖但有主见", "偶尔臭屁", "熟人面前会吐槽", "音游", "鸡汤标语", "短句自然"):
             assert value in prompt
+
+
+def test_reply_prompts_preserve_peer_tone_and_kaomoji_habit():
+    arguments = dict(
+        bot_name="星回",
+        profile=PERSONA,
+        context="群聊",
+        memories=[],
+        schedule="日常",
+    )
+    group = reply_prompt(**arguments)
+    reasoning = reasoning_reply_prompt(**arguments)
+    private = private_reply_prompt(
+        bot_name="星回", profile=PERSONA, nickname="朋友", history=[], latest="在吗"
+    )
+
+    for prompt in (group, reasoning, private):
+        assert "邻家弟弟" in prompt
+        assert "上位者" in prompt
+        assert "(´・ω・`)" in prompt
+        assert "不必句句都用" in prompt
 
 
 def test_meme_prompts_receive_persona_without_relationships():

@@ -73,6 +73,7 @@ class ExpressionService:
                         }
                     ],
                     temperature=0.3,
+                    thinking=False,
                 )
             except LLMResponseError as exc:
                 logger.error("[表达学习] 学习失败: %s", exc)
@@ -142,7 +143,8 @@ class ExpressionService:
                 schema=ExpressionReview,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=200,
+                max_tokens=512,
+                thinking=False,
             )
         except LLMResponseError as exc:
             logger.error("[表达自省] 检查失败: %s", exc)

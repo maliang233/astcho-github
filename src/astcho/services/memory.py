@@ -65,6 +65,7 @@ class MemoryService:
                         text=text[:3000], user_id=user_id, user_name=user_name
                     ),
                 ],
+                thinking=False,
             )
         except LLMResponseError as exc:
             logger.warning("记忆提取输出无效，已跳过: %s", exc)

@@ -49,7 +49,7 @@ def test_json_completion_retries_empty_content_and_disables_thinking():
     client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     result = asyncio.run(
         service.json_completion(
-            model="test",
+            model="deepseek-v4-flash",
             schema=MemeTasteDecision,
             messages=[{"role": "user", "content": "JSON"}],
             max_tokens=512,
@@ -62,6 +62,42 @@ def test_json_completion_retries_empty_content_and_disables_thinking():
     assert len(calls) == 2
     assert calls[0]["max_tokens"] == 512
     assert calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+def test_non_deepseek_model_does_not_receive_provider_specific_thinking_option():
+    calls = []
+
+    class Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content='{"heart_throb":false,"reason":"普通图片"}',
+                            reasoning_content=None,
+                        ),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=None,
+            )
+
+    service = object.__new__(LLMService)
+    service.settings = SimpleNamespace(input_price_per_million=0, output_price_per_million=0)
+    service.usage_callback = None
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    asyncio.run(
+        service.json_completion(
+            model="qwen-vl",
+            schema=MemeTasteDecision,
+            messages=[{"role": "user", "content": "JSON"}],
+            client=client,
+            thinking=False,
+        )
+    )
+
+    assert "extra_body" not in calls[0]
 
 
 def test_planner_accepts_prompt_emotion_field_names():

@@ -15,6 +15,7 @@ from astcho.handlers.media import describe_event_media
 from astcho.logging import get_logger, preview
 from astcho.runtime import Runtime
 from astcho.services.attention import AttentionService
+from astcho.services.chat import DegradedReply
 from astcho.services.emotion import apply_typo
 
 logger = get_logger(__name__)
@@ -202,6 +203,7 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
             user_id=message.user_id,
             group_id=group_id,
         )
+        degraded_reply = isinstance(answer, DegradedReply)
         logger.debug("🧮 [推理模式] 最终回复: [%s]", preview(answer, 160))
         answer = apply_typo(answer, mood["excitement"])
         parts = split_reply(answer)
@@ -239,16 +241,21 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
                 is_bot=True,
             )
         )
-        for _, item in pending:
-            if item.text:
-                runtime.memory.queue_turn(
-                    item.text,
-                    answer,
-                    group_id=group_id,
-                    user_id=item.user_id,
-                    user_name=item.nickname,
-                )
-        logger.debug("📝 [上下文] 星回消息与 %d 个用户回合已加入记忆队列", len(pending))
+        if degraded_reply:
+            logger.warning("🚫 [记忆队列] 本次为本地降级回复，不写入长期记忆提取队列")
+        else:
+            queued = 0
+            for _, item in pending:
+                if item.text:
+                    runtime.memory.queue_turn(
+                        item.text,
+                        answer,
+                        group_id=group_id,
+                        user_id=item.user_id,
+                        user_name=item.nickname,
+                    )
+                    queued += 1
+            logger.debug("📝 [上下文] 星回消息与 %d 个用户回合已加入记忆队列", queued)
 
 
 async def _handle_custom_follow(

@@ -61,7 +61,7 @@ class LLMService:
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
-        if thinking is not None:
+        if thinking is not None and _supports_thinking_toggle(model):
             request["extra_body"] = {"thinking": {"type": "enabled" if thinking else "disabled"}}
         content = ""
         for attempt in range(empty_retries + 1):
@@ -99,15 +99,19 @@ class LLMService:
         messages: list[dict],
         temperature: float = 0.7,
         max_tokens: int = 800,
+        thinking: bool | None = None,
     ) -> str:
         started = time.perf_counter()
         logger.debug("🤖 [LLM] 文本请求 | model=%s | max_tokens=%d", model, max_tokens)
-        response = await self.text_client.chat.completions.create(
+        request = dict(
             model=model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        if thinking is not None and _supports_thinking_toggle(model):
+            request["extra_body"] = {"thinking": {"type": "enabled" if thinking else "disabled"}}
+        response = await self.text_client.chat.completions.create(**request)
         self._record_usage(model, response)
         content = (response.choices[0].message.content or "").strip()
         logger.debug(
@@ -125,18 +129,26 @@ class LLMService:
         temperature: float = 0.1,
         max_tokens: int = 1200,
         client: AsyncOpenAI | None = None,
+        thinking: bool | None = None,
     ) -> str:
         started = time.perf_counter()
         logger.debug("🤖 [LLM] 原始请求 | model=%s | max_tokens=%d", model, max_tokens)
-        response = await (client or self.text_client).chat.completions.create(
+        request = dict(
             model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
         )
+        if thinking is not None and _supports_thinking_toggle(model):
+            request["extra_body"] = {"thinking": {"type": "enabled" if thinking else "disabled"}}
+        response = await (client or self.text_client).chat.completions.create(**request)
         self._record_usage(model, response)
-        content = (response.choices[0].message.content or "").strip()
+        choice = response.choices[0]
+        content = (choice.message.content or "").strip()
+        reasoning = getattr(choice.message, "reasoning_content", "") or ""
         logger.debug(
-            "✅ [LLM] 原始请求完成 | %.2fs | 输出 %d 字",
+            "✅ [LLM] 原始请求完成 | %.2fs | finish=%s | 输出=%d字 | reasoning=%d字",
             time.perf_counter() - started,
+            getattr(choice, "finish_reason", "unknown"),
             len(content),
+            len(str(reasoning)),
         )
         return content
 
@@ -172,3 +184,8 @@ def _extract_json(content: str) -> str:
     if not match:
         raise json.JSONDecodeError("No JSON object", content, 0)
     return match.group(0)
+
+
+def _supports_thinking_toggle(model: str) -> bool:
+    """Only send provider-specific thinking controls to known compatible models."""
+    return "deepseek" in model.lower()
