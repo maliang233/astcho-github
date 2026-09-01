@@ -116,7 +116,6 @@ def reply_prompt(
     planner_reason: str = "",
     expression_hint: str = "",
     user_id: str = "",
-    group_id: str = "",
 ) -> str:
     emotion = emotion or {"excitement": 0, "shyness": 0, "affinity": 0.3}
     persona = persona_summary(profile)
@@ -127,9 +126,6 @@ def reply_prompt(
             f"当前对话者称呼：{relation.get('appellation', '用户')}；"
             f"关系：{relation.get('role', '')}；{relation.get('desc', '')}"
         )
-    group_context = (
-        str(profile.get("group_profiles", {}).get(str(group_id), "")) if group_id else ""
-    )
     return f"""# {bot_name} (Astcho)
 
 当前时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -138,7 +134,6 @@ def reply_prompt(
 ## 核心人设
 {persona}
 {f"关系背景：{relation_context}" if relation_context else ""}
-{f"群聊画像：{group_context}" if group_context else ""}
 
 ## 说话方式
 - 日常口语化，务必简短自然。保持温暖体贴的人设，注意社交礼仪；语气像懂事温暖、偶尔调皮的邻家弟弟
@@ -182,7 +177,6 @@ def reasoning_reply_prompt(
     planner_reason: str = "",
     expression_hint: str = "",
     user_id: str = "",
-    group_id: str = "",
     user_name: str = "用户",
     user_input: str = "",
 ) -> str:
@@ -214,9 +208,6 @@ def reasoning_reply_prompt(
             f"\n- 当前对话者称呼：{relationship.get('appellation', user_name)}"
             f"\n- 当前关系：{relationship.get('role', '')}；{relationship.get('desc', '')}"
         )
-    group_profile = profile.get("group_profiles", {}).get(str(group_id), "") if group_id else ""
-    if group_profile:
-        persona += f"\n- 当前群聊画像：{group_profile}"
     memory_context = "\n".join(f"- {item}" for item in memories) if memories else "无"
     return f"""## 推理任务
 

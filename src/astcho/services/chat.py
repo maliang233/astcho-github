@@ -72,7 +72,6 @@ class ChatService:
         planner_reason: str = "",
         expression_hint: str = "",
         user_id: str = "",
-        group_id: str = "",
         user_name: str = "用户",
         user_input: str = "",
     ) -> str:
@@ -86,7 +85,6 @@ class ChatService:
             planner_reason=planner_reason,
             expression_hint=expression_hint,
             user_id=user_id,
-            group_id=group_id,
         )
         if self.settings.reasoning_enabled:
             logger.debug(

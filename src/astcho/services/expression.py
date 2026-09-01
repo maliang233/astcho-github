@@ -112,7 +112,14 @@ class ExpressionService:
             group_id,
             len(selected),
         )
-        return "\n".join(f"- 当“{item['situation']}”时，可以“{item['style']}”" for item in selected)
+        lines = [
+            "## 🎨 群友表达风格参考",
+            "以下是这个群里常用的表达方式，你可以参考但不要生搬硬套：",
+        ]
+        lines.extend(
+            f"- 当 {item['situation']} 时，群友常用「{item['style']}」" for item in selected
+        )
+        return "\n".join(lines)
 
     def _find_similar(self, group_id: str, situation: str) -> dict | None:
         best, score = None, 0.65

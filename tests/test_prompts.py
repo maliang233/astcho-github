@@ -108,6 +108,20 @@ def test_reply_prompts_preserve_peer_tone_and_kaomoji_habit():
     assert "小明: 说句话" in reasoning
 
 
+def test_legacy_group_profiles_never_reach_reply_prompts():
+    profile = {**PERSONA, "group_profiles": {"g1": "不应进入回复的旧群聊画像"}}
+    arguments = dict(
+        bot_name="星回",
+        profile=profile,
+        context="群聊",
+        memories=[],
+        schedule="日常",
+    )
+
+    assert "旧群聊画像" not in reply_prompt(**arguments)
+    assert "旧群聊画像" not in reasoning_reply_prompt(**arguments)
+
+
 def test_meme_prompts_receive_persona_without_relationships():
     taste = meme_taste_prompt(
         "可爱贴纸",

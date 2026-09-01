@@ -56,6 +56,8 @@ def test_expression_selection_uses_count_not_context(tmp_path):
     store.add_expression("g1", "表达惊叹时", "不会覆盖原风格", similar_id=ids["表示惊叹时"])
 
     hint = service.relevant_hint("g1", "刚才的事情实在太令人惊叹了", limit=1)
+    assert "可以参考但不要生搬硬套" in hint
+    assert "群友常用" in hint
     assert "老熟人式问候" in hint
     assert "惊叹句式" not in hint
 

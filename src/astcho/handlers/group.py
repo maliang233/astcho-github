@@ -201,7 +201,6 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
             planner_reason=decision.reason,
             expression_hint=runtime.expressions.relevant_hint(group_id, attention.context()),
             user_id=message.user_id,
-            group_id=group_id,
             user_name=trigger.nickname,
             user_input=trigger.text or trigger.image_description,
         )
