@@ -202,6 +202,8 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
             expression_hint=runtime.expressions.relevant_hint(group_id, attention.context()),
             user_id=message.user_id,
             group_id=group_id,
+            user_name=trigger.nickname,
+            user_input=trigger.text or trigger.image_description,
         )
         degraded_reply = isinstance(answer, DegradedReply)
         logger.debug("🧮 [推理模式] 最终回复: [%s]", preview(answer, 160))

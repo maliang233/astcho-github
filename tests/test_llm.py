@@ -99,6 +99,43 @@ def test_non_deepseek_model_does_not_receive_provider_specific_thinking_option()
     assert "extra_body" not in calls[0]
 
 
+def test_raw_completion_can_use_provider_default_limit_with_native_thinking_disabled():
+    calls = []
+
+    class Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content='{"thinking":"判断","reply":"在呢"}', reasoning_content=None
+                        ),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=None,
+            )
+
+    service = object.__new__(LLMService)
+    service.settings = SimpleNamespace(input_price_per_million=0, output_price_per_million=0)
+    service.usage_callback = None
+    client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    result = asyncio.run(
+        service.raw_completion(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": "做题"}],
+            client=client,
+            max_tokens=None,
+            thinking=False,
+        )
+    )
+
+    assert result.endswith('"}')
+    assert "max_tokens" not in calls[0]
+    assert calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
 def test_planner_accepts_prompt_emotion_field_names():
     value = PlannerDecision.model_validate({"action": "reply", "excitement": 0.1, "shyness": -0.1})
     assert value.excitement_delta == 0.1

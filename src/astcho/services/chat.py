@@ -73,8 +73,10 @@ class ChatService:
         expression_hint: str = "",
         user_id: str = "",
         group_id: str = "",
+        user_name: str = "用户",
+        user_input: str = "",
     ) -> str:
-        arguments = dict(
+        reply_arguments = dict(
             bot_name=str(self.settings.profile.get("name", "Astcho")),
             profile=self.settings.profile,
             context=context,
@@ -97,11 +99,20 @@ class ChatService:
             try:
                 raw = await self.llm.raw_completion(
                     model=self.settings.reasoning_model,
-                    messages=[{"role": "user", "content": reasoning_reply_prompt(**arguments)}],
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": reasoning_reply_prompt(
+                                **reply_arguments,
+                                user_name=user_name,
+                                user_input=user_input,
+                            ),
+                        }
+                    ],
                     temperature=self.settings.reasoning_temperature,
                     client=self.llm.reasoning_client,
-                    max_tokens=4096,
-                    thinking=True,
+                    max_tokens=None,
+                    thinking=False,
                 )
                 parsed = _parse_reasoning_reply(raw)
                 logger.debug(
@@ -117,7 +128,7 @@ class ChatService:
             payload = await self.llm.json_completion(
                 model=self.settings.chat_model,
                 schema=ReplyPayload,
-                messages=[{"role": "user", "content": reply_prompt(**arguments)}],
+                messages=[{"role": "user", "content": reply_prompt(**reply_arguments)}],
                 temperature=self.settings.chat_temperature,
                 max_tokens=512,
                 thinking=False,

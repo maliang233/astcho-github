@@ -127,15 +127,19 @@ class LLMService:
         model: str,
         messages: list[dict],
         temperature: float = 0.1,
-        max_tokens: int = 1200,
+        max_tokens: int | None = 1200,
         client: AsyncOpenAI | None = None,
         thinking: bool | None = False,
     ) -> str:
         started = time.perf_counter()
-        logger.debug("🤖 [LLM] 原始请求 | model=%s | max_tokens=%d", model, max_tokens)
-        request = dict(
-            model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
+        logger.debug(
+            "🤖 [LLM] 原始请求 | model=%s | max_tokens=%s",
+            model,
+            max_tokens if max_tokens is not None else "provider-default",
         )
+        request = dict(model=model, messages=messages, temperature=temperature)
+        if max_tokens is not None:
+            request["max_tokens"] = max_tokens
         if thinking is not None and _supports_thinking_toggle(model):
             request["extra_body"] = {"thinking": {"type": "enabled" if thinking else "disabled"}}
         response = await (client or self.text_client).chat.completions.create(**request)

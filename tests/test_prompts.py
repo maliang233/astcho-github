@@ -92,17 +92,20 @@ def test_reply_prompts_preserve_peer_tone_and_kaomoji_habit():
         schedule="日常",
     )
     group = reply_prompt(**arguments)
-    reasoning = reasoning_reply_prompt(**arguments)
+    reasoning = reasoning_reply_prompt(**arguments, user_name="小明", user_input="说句话")
     private = private_reply_prompt(
         bot_name="星回", profile=PERSONA, nickname="朋友", history=[], latest="在吗"
     )
 
-    for prompt in (group, reasoning, private):
+    for prompt in (group, private):
         assert "邻家弟弟" in prompt
-        assert "上位者" in prompt
         assert "(´・ω・`)" in prompt
+    for prompt in (group, private):
+        assert "上位者" in prompt
         assert "不要机械地句句添加" in prompt
-    assert "一般不超过 30 字" in reasoning
+    assert "一般不超过30字" in reasoning
+    assert "推理步骤（一步一步思考！）" in reasoning
+    assert "小明: 说句话" in reasoning
 
 
 def test_meme_prompts_receive_persona_without_relationships():

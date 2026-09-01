@@ -18,7 +18,7 @@ def _settings(*, reasoning_enabled: bool = True):
     )
 
 
-def test_reasoning_reply_keeps_thinking_and_has_room_for_visible_content():
+def test_reasoning_reply_uses_legacy_prompt_reasoning_without_native_thinking():
     calls = []
 
     class FakeLLM:
@@ -32,8 +32,9 @@ def test_reasoning_reply_keeps_thinking_and_has_room_for_visible_content():
     result = asyncio.run(service.reply("最近聊天", [], "日常"))
 
     assert result == "在呢 (｡･ω･｡)"
-    assert calls[0]["max_tokens"] == 4096
-    assert calls[0]["thinking"] is True
+    assert calls[0]["max_tokens"] is None
+    assert calls[0]["thinking"] is False
+    assert "推理步骤（一步一步思考！）" in calls[0]["messages"][0]["content"]
 
 
 def test_failed_reasoning_uses_non_thinking_replyer_and_marks_local_fallback():
