@@ -93,11 +93,20 @@ def test_two_distinct_users_trigger_custom_follow():
         async def send_group_msg(self, **kwargs):
             sent.append(kwargs)
 
-    reply = SimpleNamespace(
-        message_id=88,
-        sender=SimpleNamespace(user_id=99),
-    )
-    event = SimpleNamespace(reply=reply, get_plaintext=lambda: "")
+    def event(user_id, *, reply=True):
+        original = Message([MessageSegment.at(99)])
+        return SimpleNamespace(
+            message_id=user_id,
+            reply=(
+                SimpleNamespace(message_id=88, sender=SimpleNamespace(user_id=99))
+                if reply
+                else None
+            ),
+            original_message=original,
+            get_message=lambda: original,
+            get_plaintext=lambda: "",
+        )
+
     runtime = SimpleNamespace(
         schedule=SimpleNamespace(current=lambda: SimpleNamespace(talk_value=50)),
         custom_reply_tracker={"1": {}},
@@ -105,11 +114,73 @@ def test_two_distinct_users_trigger_custom_follow():
     )
 
     async def scenario():
-        assert await _handle_custom_follow(runtime, Bot(), event, "1", "10") is False
-        assert await _handle_custom_follow(runtime, Bot(), event, "1", "11") is True
+        assert await _handle_custom_follow(runtime, Bot(), event(10), "1", "10") is False
+        assert await _handle_custom_follow(runtime, Bot(), event(11), "1", "11") is True
 
     asyncio.run(scenario())
     assert len(sent) == 1
+
+
+def test_bare_at_can_continue_an_active_custom_follow_chain():
+    sent = []
+
+    class Bot:
+        self_id = "10001"
+
+        async def send_group_msg(self, **kwargs):
+            sent.append(kwargs)
+
+    def event(user_id, *, reply):
+        original = Message([MessageSegment.at(99)])
+        return SimpleNamespace(
+            message_id=user_id,
+            reply=(
+                SimpleNamespace(message_id=88, sender=SimpleNamespace(user_id=99))
+                if reply
+                else None
+            ),
+            original_message=original,
+            get_message=lambda: original,
+            get_plaintext=lambda: "",
+        )
+
+    runtime = SimpleNamespace(
+        schedule=SimpleNamespace(current=lambda: SimpleNamespace(talk_value=50)),
+        custom_reply_tracker={"1": {}},
+        custom_reply_handled={"1": {}},
+    )
+
+    async def scenario():
+        first = await _handle_custom_follow(runtime, Bot(), event(10, reply=True), "1", "10")
+        second = await _handle_custom_follow(runtime, Bot(), event(11, reply=False), "1", "11")
+        assert first is False
+        assert second is True
+
+    asyncio.run(scenario())
+    assert len(sent) == 1
+
+
+def test_empty_reply_without_mention_does_not_start_custom_follow():
+    class Bot:
+        self_id = "10001"
+
+    reply = SimpleNamespace(message_id=88, sender=SimpleNamespace(user_id=99))
+    event = SimpleNamespace(
+        message_id=10,
+        reply=reply,
+        original_message=Message([MessageSegment.reply(88)]),
+        get_message=lambda: Message(),
+        get_plaintext=lambda: "",
+    )
+    runtime = SimpleNamespace(
+        schedule=SimpleNamespace(current=lambda: SimpleNamespace(talk_value=50)),
+        custom_reply_tracker={"1": {}},
+        custom_reply_handled={"1": {}},
+    )
+
+    handled = asyncio.run(_handle_custom_follow(runtime, Bot(), event, "1", "10"))
+    assert handled is False
+    assert runtime.custom_reply_tracker["1"] == {}
 
 
 def test_media_failure_degrades_without_stopping_message():

@@ -262,30 +262,75 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
 async def _handle_custom_follow(
     runtime: Runtime, bot: Bot, event: GroupMessageEvent, group_id: str, user_id: str
 ) -> bool:
-    """Follow the two-user reply+@ custom used in the original group handler."""
-    if (
-        runtime.schedule.current().talk_value < 10
-        or not event.reply
-        or event.get_plaintext().strip()
-    ):
+    """Join after two users send an empty reply-and-mention to the same message."""
+    if runtime.schedule.current().talk_value < 10:
+        logger.debug("🔕 [习俗跟风] 日程低活跃，暂不参与")
         return False
-    target_id = str(event.reply.message_id)
-    target_user = str(event.reply.sender.user_id)
-    if target_user == str(bot.self_id):
+    if event.get_plaintext().strip():
         return False
     now = time.time()
     tracker = runtime.custom_reply_tracker[group_id]
     handled = runtime.custom_reply_handled[group_id]
     for key in [key for key, value in tracker.items() if now - value["timestamp"] > 60]:
+        logger.debug("⌛ [习俗跟风] 群 %s 目标消息 %s 追踪超时", group_id, key)
         tracker.pop(key, None)
     for key in [key for key, timestamp in handled.items() if now - timestamp > 600]:
         handled.pop(key, None)
+
+    at_users = _mentioned_users(event)
+    if event.reply:
+        target_id = str(event.reply.message_id)
+        target_user = str(event.reply.sender.user_id)
+        if target_user not in at_users:
+            logger.debug(
+                "↩️ [习俗跟风] 群 %s 消息 %s 是空引用，但未 @ 原消息发送者",
+                group_id,
+                event.message_id,
+            )
+            return False
+    else:
+        # Some QQ clients encode later repetitions as a bare @ even though the first
+        # message in the chain carries reply+@. Continue only when it identifies one
+        # unambiguous active target in this group.
+        candidates = [
+            (message_id, data)
+            for message_id, data in tracker.items()
+            if str(data["target_user"]) in at_users
+        ]
+        if len(candidates) != 1:
+            return False
+        target_id, target = candidates[0]
+        target_user = str(target["target_user"])
+        logger.debug(
+            "🔗 [习俗跟风] 群 %s 将纯 @ 消息 %s 接续到目标消息 %s",
+            group_id,
+            event.message_id,
+            target_id,
+        )
+
+    if target_user == str(bot.self_id):
+        return False
     if target_id in handled:
+        logger.debug("✅ [习俗跟风] 群 %s 目标消息 %s 已处理，忽略重复", group_id, target_id)
         return False
     entry = tracker.setdefault(
         target_id, {"uids": set(), "timestamp": now, "target_user": target_user}
     )
+    if user_id in entry["uids"]:
+        logger.debug(
+            "👤 [习俗跟风] 群 %s 用户 %s 重复参与目标消息 %s",
+            group_id,
+            user_id,
+            target_id,
+        )
+        return False
     entry["uids"].add(user_id)
+    logger.debug(
+        "👀 [习俗跟风] 群 %s 追踪目标消息 %s | %d/2 人",
+        group_id,
+        target_id,
+        len(entry["uids"]),
+    )
     if len(entry["uids"]) < 2:
         return False
     from nonebot.adapters.onebot.v11 import Message, MessageSegment
@@ -301,6 +346,15 @@ async def _handle_custom_follow(
         handled.pop(target_id, None)
         logger.exception("习俗跟风失败 group=%s target=%s", group_id, target_id)
         return False
+
+
+def _mentioned_users(event: GroupMessageEvent) -> set[str]:
+    message = getattr(event, "original_message", None) or event.get_message()
+    return {
+        str(segment.data.get("qq"))
+        for segment in message
+        if segment.type == "at" and segment.data.get("qq") not in {None, "all"}
+    }
 
 
 def is_bot_mentioned(event: GroupMessageEvent, bot_id: str) -> bool:
