@@ -100,9 +100,13 @@ def test_reply_prompts_preserve_peer_tone_and_kaomoji_habit():
     for prompt in (group, private):
         assert "邻家弟弟" in prompt
         assert "(´・ω・`)" in prompt
+    for prompt in (group, reasoning, private):
+        assert "大多数日常闲聊" in prompt
+        assert "软化短句语气" in prompt
+        assert "严肃、沉重或纯技术回答可以不带" in prompt
     for prompt in (group, private):
         assert "上位者" in prompt
-        assert "不要机械地句句添加" in prompt
+        assert "不要机械重复同一个" in prompt
     assert "一般不超过30字" in reasoning
     assert "推理步骤（一步一步思考！）" in reasoning
     assert "小明: 说句话" in reasoning
