@@ -123,7 +123,9 @@ async def _process_after_window(runtime: Runtime, bot: Bot, group_id: str) -> No
         trace = attention.last_trace
         if trace.get("reason") == "概率判定":
             logger.debug(
-                "📊 [概率] 日程:%s(%s) 沉默:%d秒 兴奋:%.2f 频率:%.2f → 概率:%.1f%% 抽样:%.3f → %s",
+                "📊 [概率] 群:%s 日程:%s(%s) 沉默:%d秒 兴奋:%.2f 频率:%.2f "
+                "→ 概率:%.1f%% 抽样:%.3f → %s",
+                group_id,
                 schedule.routine,
                 schedule.talk_value,
                 int(float(trace.get("silence", 0))),

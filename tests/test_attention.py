@@ -1,5 +1,6 @@
 import time
 
+import astcho.services.attention as attention_module
 from astcho.domain.models import ChatMessage
 from astcho.services.attention import AttentionService
 from astcho.services.schedule import ScheduleState
@@ -40,3 +41,17 @@ def test_probability_trace_exposes_decision_factors():
     assert service.last_trace["talk"] == 50
     assert 0 < service.last_trace["probability"] < 1
     assert service.last_trace["sample"] == 0.99
+
+
+def test_silence_grows_from_first_observed_message_before_bot_replies(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(attention_module.time, "time", lambda: now[0])
+    service = AttentionService("42", base_talk_probability=0.1)
+    service.add(message(timestamp=now[0]))
+
+    now[0] += 600
+    active = ScheduleState(50, "calm", "day")
+    assert not service.should_plan(message(timestamp=now[0]), active, random_value=0.99)
+    assert service.last_trace["silence"] == 600
+    assert service.last_trace["probability"] > 0.05
+    assert service.seconds_since_bot_reply() is None

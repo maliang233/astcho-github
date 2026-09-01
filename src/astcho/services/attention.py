@@ -18,6 +18,7 @@ class AttentionService:
         self.bot_name = bot_name
         self.base_talk_probability = base_talk_probability
         self.messages: deque[ChatMessage] = deque(maxlen=30)
+        self.observed_since: float | None = None
         self.last_bot_reply = 0.0
         self.consecutive_no_reply = 0
         self.watching_until = 0.0
@@ -26,6 +27,8 @@ class AttentionService:
 
     def add(self, message: ChatMessage) -> None:
         self.messages.append(message)
+        if self.observed_since is None:
+            self.observed_since = message.timestamp
         if message.is_bot or message.user_id == self.bot_id:
             self.last_bot_reply = message.timestamp
 
@@ -60,6 +63,8 @@ class AttentionService:
             }
             return True
         now = time.time()
+        if self.observed_since is None:
+            self.observed_since = min(message.timestamp, now)
         if self.last_bot_reply and now - self.last_bot_reply < 5:
             self.last_trace = {
                 "reason": "回复冷却中",
@@ -69,9 +74,8 @@ class AttentionService:
                 "silence": now - self.last_bot_reply,
             }
             return False
-        silence_bonus = (
-            min(0.2, max(0, now - self.last_bot_reply) / 600 * 0.05) if self.last_bot_reply else 0
-        )
+        silence = self._silence_seconds(now)
+        silence_bonus = min(0.2, silence / 600 * 0.05)
         recent = [m for m in self.messages if not m.is_bot and now - m.timestamp <= 300]
         average_gap = (
             (recent[-1].timestamp - recent[0].timestamp) / (len(recent) - 1)
@@ -99,7 +103,7 @@ class AttentionService:
             "reason": "概率判定",
             "direct": False,
             "talk": schedule.talk_value,
-            "silence": (now - self.last_bot_reply) if self.last_bot_reply else 0,
+            "silence": silence,
             "excitement": excitement,
             "frequency": frequency_factor,
             "probability": probability,
@@ -134,3 +138,7 @@ class AttentionService:
         if not self.last_bot_reply:
             return None
         return max(0, int(time.time() - self.last_bot_reply))
+
+    def _silence_seconds(self, now: float) -> float:
+        reference = self.last_bot_reply or self.observed_since
+        return max(0.0, now - reference) if reference is not None else 0.0
