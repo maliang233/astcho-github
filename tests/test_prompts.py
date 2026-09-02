@@ -45,8 +45,11 @@ def test_planner_prompt_preserves_decision_contract():
         "meme_query",
     ):
         assert field in prompt
-    assert "大家正在复读或跟风" in prompt
-    assert "不要仅因内容没有直接指向你" in prompt
+    assert "模仿真实群友" in prompt
+    assert "问答助手是否应该回答" in prompt
+    assert "没有@你" in prompt
+    assert "本身不是沉默理由" in prompt
+    assert "接梗、吐槽、附和" in prompt
 
 
 def test_reply_prompt_keeps_persona_emotion_memory_and_context():
